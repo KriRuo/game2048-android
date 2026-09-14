@@ -158,4 +158,49 @@ class Game2048EngineTest {
         val result = engineWithFixedSeed.move(state, Direction.LEFT)
         assertEquals(100, result.state.best)
     }
+
+    @Test
+    fun `newGame on Big Board seeds a 5x5 state with two tiles`() {
+        val state = engine.newGame(boardSize = BIG_BOARD_SIZE)
+        assertEquals(BIG_BOARD_SIZE, state.boardSize)
+        assertEquals(2, state.tiles.size)
+        assertTrue(state.tiles.all { it.row in 0 until BIG_BOARD_SIZE && it.col in 0 until BIG_BOARD_SIZE })
+    }
+
+    @Test
+    fun `moving left on a 5x5 board compacts all the way to column 0`() {
+        val state = GameState(
+            tiles = listOf(Tile(1, 2, 2, 4)),
+            nextTileId = 2,
+            boardSize = BIG_BOARD_SIZE
+        )
+        val result = engine.move(state, Direction.LEFT)
+
+        assertTrue(result.moved)
+        val survivor = result.state.tiles.first { it.id == 1 }
+        assertEquals(2 to 0, survivor.row to survivor.col)
+    }
+
+    @Test
+    fun `game over on a 5x5 board is not reported early using the 4x4 cell count`() {
+        // 20 tiles: fewer than BOARD_SIZE*BOARD_SIZE (16) would already look "full" if the
+        // engine still hard-coded 4x4, but this is far short of a full 5x5 (25) board, and no
+        // two adjacent equal values exist, so no move should be reported as game-over-inducing.
+        val tiles = (0 until 20).map { i -> Tile(i + 1, if (i % 2 == 0) 2 else 4, i / BIG_BOARD_SIZE, i % BIG_BOARD_SIZE) }
+        assertTrue(engine.canAnyMoveBeMade(tiles, BIG_BOARD_SIZE))
+    }
+
+    @Test
+    fun `spawnTile on a 5x5 board only lands within its own bounds`() {
+        val fullFourByFour = (0 until BOARD_SIZE * BOARD_SIZE).map { i ->
+            Tile(i + 1, 2, i / BOARD_SIZE, i % BOARD_SIZE)
+        }
+        // A 4x4-full set of tiles leaves the whole last row/column of a 5x5 board empty.
+        val state = GameState(tiles = fullFourByFour, nextTileId = fullFourByFour.size + 1, boardSize = BIG_BOARD_SIZE)
+        val result = engine.spawnTile(state)
+
+        assertEquals(fullFourByFour.size + 1, result.tiles.size)
+        val spawned = result.tiles.first { it.id == fullFourByFour.size + 1 }
+        assertTrue(spawned.row == BIG_BOARD_SIZE - 1 || spawned.col == BIG_BOARD_SIZE - 1)
+    }
 }

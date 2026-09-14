@@ -2,6 +2,9 @@ package com.example.game2048
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import com.example.game2048.logic.BIG_BOARD_SIZE
+import com.example.game2048.logic.BOARD_SIZE
+import com.example.game2048.logic.BigBoardUnlock
 import com.example.game2048.logic.Direction
 import com.example.game2048.logic.GameState
 import com.example.game2048.logic.Game2048Engine
@@ -26,6 +29,7 @@ private const val KEY_STREAK_LONGEST = "streak_longest"
 private const val KEY_STREAK_LAST_DAY = "streak_last_day"
 private const val KEY_CUMULATIVE_SCORE = "cumulative_score"
 private const val KEY_SELECTED_PALETTE = "selected_palette"
+private const val KEY_BIG_BOARD_ENABLED = "big_board_enabled"
 
 /**
  * Everything the UI needs to render one frame of the game, including enough detail about
@@ -62,7 +66,11 @@ data class GameUiState(
      *  whether this run leveled the player up. */
     val levelAtGameStart: Int = 1,
     /** The currently-active tile color palette (see [TilePalette]). */
-    val selectedPalette: TilePalette = TilePalette.DEFAULT
+    val selectedPalette: TilePalette = TilePalette.DEFAULT,
+    /** The player's stored preference for [BigBoardUnlock]'s 5x5 mode. Takes effect on the
+     *  *next* New Game -- [game]'s actual size is [GameState.boardSize], which doesn't change
+     *  mid-game even if this is toggled while playing. */
+    val bigBoardEnabled: Boolean = false
 )
 
 /**
@@ -79,6 +87,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private var cumulativeScore: Long = prefs.getLong(KEY_CUMULATIVE_SCORE, 0L)
     private var bestScore: Int = prefs.getInt(KEY_BEST_SCORE, 0)
     private var selectedPalette: TilePalette = TilePalette.fromId(prefs.getString(KEY_SELECTED_PALETTE, null))
+    private var bigBoardEnabled: Boolean = prefs.getBoolean(KEY_BIG_BOARD_ENABLED, false)
 
     private val _uiState = MutableStateFlow(buildInitialState())
     val uiState: StateFlow<GameUiState> = _uiState.asStateFlow()
@@ -110,11 +119,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     fun onNewGame() {
         val level = _uiState.value.level
-        val fresh = freshGame(best = bestScore).copy(
+        val boardSize = if (bigBoardEnabled && BigBoardUnlock.isUnlocked(level)) BIG_BOARD_SIZE else BOARD_SIZE
+        val fresh = freshGame(best = bestScore, boardSize = boardSize).copy(
             level = level,
             levelProgress = _uiState.value.levelProgress,
             levelAtGameStart = level,
-            selectedPalette = selectedPalette
+            selectedPalette = selectedPalette,
+            bigBoardEnabled = bigBoardEnabled
         )
         persist(fresh.game, includeBest = false)
         _uiState.value = fresh
@@ -127,6 +138,17 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         selectedPalette = palette
         prefs.edit().putString(KEY_SELECTED_PALETTE, palette.id).commit()
         _uiState.value = current.copy(selectedPalette = palette)
+    }
+
+    /** No-ops if Big Board isn't unlocked yet at the player's current level. Only updates the
+     *  stored preference for the *next* New Game -- flipping this mid-game doesn't resize (or
+     *  reset) the board currently in play; see [GameUiState.bigBoardEnabled]. */
+    fun onToggleBigBoard(enabled: Boolean) {
+        val current = _uiState.value
+        if (enabled && !BigBoardUnlock.isUnlocked(current.level)) return
+        bigBoardEnabled = enabled
+        prefs.edit().putBoolean(KEY_BIG_BOARD_ENABLED, enabled).commit()
+        _uiState.value = current.copy(bigBoardEnabled = enabled)
     }
 
     /** Called when the player dismisses the "You Win" banner and wants to keep playing. */
@@ -155,7 +177,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             level = level,
             levelProgress = LevelTracker.progressToNextLevel(cumulativeScore),
             levelAtGameStart = level,
-            selectedPalette = selectedPalette
+            selectedPalette = selectedPalette,
+            bigBoardEnabled = bigBoardEnabled
         )
     }
 
@@ -187,8 +210,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             .commit()
     }
 
-    private fun freshGame(best: Int = bestScore): GameUiState {
-        val game = engine.newGame(best = best)
+    private fun freshGame(best: Int = bestScore, boardSize: Int = BOARD_SIZE): GameUiState {
+        val game = engine.newGame(best = best, boardSize = boardSize)
         return GameUiState(
             game = game,
             lastSpawnedTileIds = game.tiles.map { it.id }.toSet(),

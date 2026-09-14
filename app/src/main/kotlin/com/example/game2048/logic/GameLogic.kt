@@ -5,6 +5,9 @@ import kotlin.random.Random
 /** Board side length. */
 const val BOARD_SIZE = 4
 
+/** Board side length for the optional "Big Board" mode (see [BigBoardUnlock]). */
+const val BIG_BOARD_SIZE = 5
+
 enum class Direction { LEFT, RIGHT, UP, DOWN }
 
 /** A single tile on the board. [id] is stable across moves so the UI can animate it. */
@@ -23,10 +26,16 @@ data class GameState(
     val isGameOver: Boolean = false,
     val hasWon: Boolean = false,
     /** True once the player has dismissed the "You Win" banner and kept playing. */
-    val continuePastWin: Boolean = false
+    val continuePastWin: Boolean = false,
+    /** Side length of the square board this game is being played on -- [BOARD_SIZE] (4) unless
+     *  the player opted into [BigBoardUnlock]'s 5x5 mode when this game started. Carried on the
+     *  state itself (rather than threaded separately) since every row/col bound in the engine
+     *  needs it and it never changes for the lifetime of one game. */
+    val boardSize: Int = BOARD_SIZE
 ) {
     companion object {
-        fun empty(best: Int = 0): GameState = GameState(tiles = emptyList(), best = best)
+        fun empty(best: Int = 0, boardSize: Int = BOARD_SIZE): GameState =
+            GameState(tiles = emptyList(), best = best, boardSize = boardSize)
     }
 }
 
@@ -65,8 +74,8 @@ data class MoveResult(
 class Game2048Engine(private val random: Random = Random.Default) {
 
     /** Starts a fresh game: empty board with two random tiles seeded in. */
-    fun newGame(best: Int = 0): GameState {
-        var state = GameState.empty(best = best)
+    fun newGame(best: Int = 0, boardSize: Int = BOARD_SIZE): GameState {
+        var state = GameState.empty(best = best, boardSize = boardSize)
         state = spawnTile(state)
         state = spawnTile(state)
         return state
@@ -79,7 +88,7 @@ class Game2048Engine(private val random: Random = Random.Default) {
     fun move(state: GameState, direction: Direction): MoveResult {
         if (state.isGameOver) return MoveResult(state, moved = false)
 
-        val (newTiles, movements, mergedIds, gained) = applyMove(state.tiles, direction)
+        val (newTiles, movements, mergedIds, gained) = applyMove(state.tiles, direction, state.boardSize)
         val changed = gridOf(newTiles) != gridOf(state.tiles)
         if (!changed) {
             return MoveResult(state, moved = false)
@@ -98,7 +107,7 @@ class Game2048Engine(private val random: Random = Random.Default) {
         newState = spawnedState
 
         val won = !state.hasWon && newState.tiles.any { it.value >= 2048 }
-        val gameOver = !canAnyMoveBeMade(newState.tiles)
+        val gameOver = !canAnyMoveBeMade(newState.tiles, newState.boardSize)
 
         newState = newState.copy(hasWon = state.hasWon || won, isGameOver = gameOver)
         return MoveResult(
@@ -114,8 +123,8 @@ class Game2048Engine(private val random: Random = Random.Default) {
     fun spawnTile(state: GameState): GameState {
         val occupied = state.tiles.map { it.row to it.col }.toSet()
         val emptyCells = buildList {
-            for (r in 0 until BOARD_SIZE) {
-                for (c in 0 until BOARD_SIZE) {
+            for (r in 0 until state.boardSize) {
+                for (c in 0 until state.boardSize) {
                     if ((r to c) !in occupied) add(r to c)
                 }
             }
@@ -129,12 +138,12 @@ class Game2048Engine(private val random: Random = Random.Default) {
     }
 
     /** True if there is any empty cell, or any move in any direction would change the board. */
-    fun canAnyMoveBeMade(tiles: List<Tile>): Boolean {
+    fun canAnyMoveBeMade(tiles: List<Tile>, boardSize: Int = BOARD_SIZE): Boolean {
         val occupied = tiles.map { it.row to it.col }.toSet()
-        if (occupied.size < BOARD_SIZE * BOARD_SIZE) return true
+        if (occupied.size < boardSize * boardSize) return true
 
         for (direction in Direction.values()) {
-            val (newTiles, _, _, _) = applyMove(tiles, direction)
+            val (newTiles, _, _, _) = applyMove(tiles, direction, boardSize)
             if (gridOf(newTiles) != gridOf(tiles)) return true
         }
         return false
@@ -157,7 +166,7 @@ class Game2048Engine(private val random: Random = Random.Default) {
      * when sliding left, etc.) keeps its own [TileMovement] with [TileMovement.isConsumedByMerge]
      * set, targeting the same cell as the tile it merged into, rather than being silently dropped.
      */
-    private fun applyMove(tiles: List<Tile>, direction: Direction): LineResult {
+    private fun applyMove(tiles: List<Tile>, direction: Direction, boardSize: Int): LineResult {
         val lines = tiles.groupBy { lineNumber(direction, it.row, it.col) }
 
         val newTiles = mutableListOf<Tile>()
@@ -166,7 +175,7 @@ class Game2048Engine(private val random: Random = Random.Default) {
         var gained = 0
 
         for ((lineNo, lineTiles) in lines) {
-            val ordered = lineTiles.sortedBy { indexInLine(direction, it.row, it.col) }
+            val ordered = lineTiles.sortedBy { indexInLine(direction, it.row, it.col, boardSize) }
             var i = 0
             var target = 0
             while (i < ordered.size) {
@@ -174,7 +183,7 @@ class Game2048Engine(private val random: Random = Random.Default) {
                 val next = ordered.getOrNull(i + 1)
                 if (next != null && next.value == current.value) {
                     val newValue = current.value * 2
-                    val (toRow, toCol) = coordFromLine(direction, lineNo, target)
+                    val (toRow, toCol) = coordFromLine(direction, lineNo, target, boardSize)
                     newTiles.add(Tile(current.id, newValue, toRow, toCol))
                     mergedIds.add(current.id)
                     gained += newValue
@@ -182,7 +191,7 @@ class Game2048Engine(private val random: Random = Random.Default) {
                     movements.add(TileMovement(next.id, next.row, next.col, toRow, toCol, isConsumedByMerge = true))
                     i += 2
                 } else {
-                    val (toRow, toCol) = coordFromLine(direction, lineNo, target)
+                    val (toRow, toCol) = coordFromLine(direction, lineNo, target, boardSize)
                     newTiles.add(Tile(current.id, current.value, toRow, toCol))
                     movements.add(TileMovement(current.id, current.row, current.col, toRow, toCol, isConsumedByMerge = false))
                     i += 1
@@ -199,17 +208,17 @@ class Game2048Engine(private val random: Random = Random.Default) {
         Direction.UP, Direction.DOWN -> col
     }
 
-    private fun indexInLine(direction: Direction, row: Int, col: Int): Int = when (direction) {
+    private fun indexInLine(direction: Direction, row: Int, col: Int, boardSize: Int): Int = when (direction) {
         Direction.LEFT -> col
-        Direction.RIGHT -> BOARD_SIZE - 1 - col
+        Direction.RIGHT -> boardSize - 1 - col
         Direction.UP -> row
-        Direction.DOWN -> BOARD_SIZE - 1 - row
+        Direction.DOWN -> boardSize - 1 - row
     }
 
-    private fun coordFromLine(direction: Direction, lineNo: Int, index: Int): Pair<Int, Int> = when (direction) {
+    private fun coordFromLine(direction: Direction, lineNo: Int, index: Int, boardSize: Int): Pair<Int, Int> = when (direction) {
         Direction.LEFT -> lineNo to index
-        Direction.RIGHT -> lineNo to (BOARD_SIZE - 1 - index)
+        Direction.RIGHT -> lineNo to (boardSize - 1 - index)
         Direction.UP -> index to lineNo
-        Direction.DOWN -> (BOARD_SIZE - 1 - index) to lineNo
+        Direction.DOWN -> (boardSize - 1 - index) to lineNo
     }
 }

@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -36,6 +37,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -59,7 +61,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.game2048.logic.BOARD_SIZE
+import com.example.game2048.logic.BigBoardUnlock
 import com.example.game2048.logic.Direction
 import com.example.game2048.logic.ThemeUnlocks
 import com.example.game2048.logic.Tile
@@ -85,38 +87,82 @@ private const val COMBO_POPUP_LIFETIME_MS = 900L
 fun GameScreen(viewModel: GameViewModel = viewModel()) {
     val uiState by viewModel.uiState.collectAsState()
 
-    Column(
+    // Landscape gets its own layout (sidebar + board side by side) rather than reusing the
+    // portrait Column: stacking the header above the board there left only a short sliver of
+    // height for the (necessarily square) board, so it rendered tiny with huge empty gutters
+    // on either side while the header/buttons sat stranded in the corners.
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 20.dp, vertical = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Header(
-            score = uiState.game.score,
-            best = uiState.game.best,
-            scoreGainedThisMove = if (uiState.moveToken > 0) uiState.lastScoreGained else 0,
-            moveToken = uiState.moveToken,
-            currentStreak = uiState.currentStreak,
-            level = uiState.level,
-            levelProgress = uiState.levelProgress,
-            selectedPalette = uiState.selectedPalette,
-            onNewGame = viewModel::onNewGame,
-            onSelectPalette = viewModel::onSelectPalette
-        )
+        if (maxWidth > maxHeight) {
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 20.dp, vertical = 20.dp)
+            ) {
+                Sidebar(
+                    score = uiState.game.score,
+                    best = uiState.game.best,
+                    scoreGainedThisMove = if (uiState.moveToken > 0) uiState.lastScoreGained else 0,
+                    moveToken = uiState.moveToken,
+                    currentStreak = uiState.currentStreak,
+                    level = uiState.level,
+                    levelProgress = uiState.levelProgress,
+                    selectedPalette = uiState.selectedPalette,
+                    bigBoardEnabled = uiState.bigBoardEnabled,
+                    onNewGame = viewModel::onNewGame,
+                    onSelectPalette = viewModel::onSelectPalette,
+                    onToggleBigBoard = viewModel::onToggleBigBoard,
+                    modifier = Modifier.padding(end = 24.dp)
+                )
+                BoardArea(uiState = uiState, viewModel = viewModel, modifier = Modifier.weight(1f).fillMaxHeight())
+            }
+        } else {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 20.dp, vertical = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Header(
+                    score = uiState.game.score,
+                    best = uiState.game.best,
+                    scoreGainedThisMove = if (uiState.moveToken > 0) uiState.lastScoreGained else 0,
+                    moveToken = uiState.moveToken,
+                    currentStreak = uiState.currentStreak,
+                    level = uiState.level,
+                    levelProgress = uiState.levelProgress,
+                    selectedPalette = uiState.selectedPalette,
+                    bigBoardEnabled = uiState.bigBoardEnabled,
+                    onNewGame = viewModel::onNewGame,
+                    onSelectPalette = viewModel::onSelectPalette,
+                    onToggleBigBoard = viewModel::onToggleBigBoard
+                )
+                BoardArea(
+                    uiState = uiState,
+                    viewModel = viewModel,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .padding(top = 24.dp)
+                )
+            }
+        }
+    }
+}
 
-        // Size the board to whichever of the remaining width/height is smaller, so it stays
-        // fully on screen in landscape and on short/large-screen devices. Sizing it purely by
-        // width (fillMaxWidth + aspectRatio) makes it taller than the screen in landscape,
-        // pushing the header and buttons out of view entirely.
-        BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .padding(top = 24.dp)
-        ) {
+/** The square board plus everything overlaid on it (combo popup, game-over/win banners,
+ *  streak celebration). Sized to whichever of the space it's given is smaller, so it's
+ *  always a full square that fits -- callers give it either the width-minus-sidebar
+ *  (landscape) or the width (portrait) as the constraining dimension. */
+@Composable
+private fun BoardArea(uiState: GameUiState, viewModel: GameViewModel, modifier: Modifier = Modifier) {
+    BoxWithConstraints(modifier = modifier) {
         Box(modifier = Modifier.size(minOf(maxWidth, maxHeight)).align(Alignment.TopCenter)) {
             Board(
+                boardSize = uiState.game.boardSize,
                 tiles = uiState.game.tiles,
                 previousTilesById = uiState.previousTilesById,
                 movements = uiState.lastMovements,
@@ -182,6 +228,17 @@ fun GameScreen(viewModel: GameViewModel = viewModel()) {
                             color = accent
                         )
                     }
+                    if (uiState.levelAtGameStart < BigBoardUnlock.UNLOCK_LEVEL &&
+                        uiState.level >= BigBoardUnlock.UNLOCK_LEVEL
+                    ) {
+                        Text(
+                            text = "📐 Big Board unlocked! Turn it on from Customize.",
+                            modifier = Modifier.padding(top = 10.dp),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = accent
+                        )
+                    }
                 }
             }
             androidx.compose.animation.AnimatedVisibility(
@@ -203,7 +260,6 @@ fun GameScreen(viewModel: GameViewModel = viewModel()) {
                 onShown = viewModel::onMilestoneBannerShown
             )
         }
-        }
     }
 }
 
@@ -217,8 +273,10 @@ private fun Header(
     level: Int,
     levelProgress: Float,
     selectedPalette: TilePalette,
+    bigBoardEnabled: Boolean,
     onNewGame: () -> Unit,
-    onSelectPalette: (TilePalette) -> Unit
+    onSelectPalette: (TilePalette) -> Unit,
+    onToggleBigBoard: (Boolean) -> Unit
 ) {
     val accent = LocalPaletteColors.current.accent
     var showThemePicker by remember { mutableStateOf(false) }
@@ -278,7 +336,7 @@ private fun Header(
             shape = RoundedCornerShape(10.dp),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = accent)
         ) {
-            Text("🎨 Theme", fontWeight = FontWeight.SemiBold)
+            Text("🎨 Customize", fontWeight = FontWeight.SemiBold)
         }
         Spacer(modifier = Modifier.width(10.dp))
         OutlinedButton(
@@ -294,10 +352,105 @@ private fun Header(
         ThemePickerDialog(
             currentPalette = selectedPalette,
             level = level,
+            bigBoardEnabled = bigBoardEnabled,
             onSelect = {
                 onSelectPalette(it)
                 showThemePicker = false
             },
+            onToggleBigBoard = onToggleBigBoard,
+            onDismiss = { showThemePicker = false }
+        )
+    }
+}
+
+/** Landscape counterpart to [Header]: the same wordmark/level/streak/scores/buttons, but
+ *  stacked into a narrow vertical strip instead of spread across the full width, so the
+ *  board gets the rest of the (short, wide) screen instead of a squeezed sliver below it. */
+@Composable
+private fun Sidebar(
+    score: Int,
+    best: Int,
+    scoreGainedThisMove: Int,
+    moveToken: Long,
+    currentStreak: Int,
+    level: Int,
+    levelProgress: Float,
+    selectedPalette: TilePalette,
+    bigBoardEnabled: Boolean,
+    onNewGame: () -> Unit,
+    onSelectPalette: (TilePalette) -> Unit,
+    onToggleBigBoard: (Boolean) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val accent = LocalPaletteColors.current.accent
+    var showThemePicker by remember { mutableStateOf(false) }
+
+    Column(modifier = modifier.width(150.dp)) {
+        Text(
+            text = "2048",
+            style = MaterialTheme.typography.headlineMedium,
+            color = accent
+        )
+        Text(
+            text = "Lv. $level",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+        )
+        LinearProgressIndicator(
+            progress = { levelProgress },
+            modifier = Modifier
+                .padding(top = 3.dp)
+                .width(70.dp)
+                .height(4.dp)
+                .clip(RoundedCornerShape(2.dp)),
+            color = accent,
+            trackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.15f),
+            drawStopIndicator = {}
+        )
+        if (currentStreak >= 1) {
+            Text(
+                text = "🔥 $currentStreak-day streak",
+                modifier = Modifier.padding(top = 4.dp),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+        ScoreChip(label = "SCORE", value = score, scoreGainedThisMove = scoreGainedThisMove, moveToken = moveToken)
+        Spacer(modifier = Modifier.height(10.dp))
+        ScoreChip(label = "BEST", value = best)
+
+        Spacer(modifier = Modifier.height(24.dp))
+        OutlinedButton(
+            onClick = { showThemePicker = true },
+            shape = RoundedCornerShape(10.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = accent),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("🎨 Customize", fontWeight = FontWeight.SemiBold)
+        }
+        Spacer(modifier = Modifier.height(10.dp))
+        OutlinedButton(
+            onClick = onNewGame,
+            shape = RoundedCornerShape(10.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = accent),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("New Game", fontWeight = FontWeight.SemiBold)
+        }
+    }
+
+    if (showThemePicker) {
+        ThemePickerDialog(
+            currentPalette = selectedPalette,
+            level = level,
+            bigBoardEnabled = bigBoardEnabled,
+            onSelect = {
+                onSelectPalette(it)
+                showThemePicker = false
+            },
+            onToggleBigBoard = onToggleBigBoard,
             onDismiss = { showThemePicker = false }
         )
     }
@@ -307,7 +460,9 @@ private fun Header(
 private fun ThemePickerDialog(
     currentPalette: TilePalette,
     level: Int,
+    bigBoardEnabled: Boolean,
     onSelect: (TilePalette) -> Unit,
+    onToggleBigBoard: (Boolean) -> Unit,
     onDismiss: () -> Unit
 ) {
     val isDark = LocalIsDarkTheme.current
@@ -316,7 +471,7 @@ private fun ThemePickerDialog(
         confirmButton = {
             TextButton(onClick = onDismiss) { Text("Close") }
         },
-        title = { Text("Choose a Theme") },
+        title = { Text("Customize") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 TilePalette.entries.forEach { palette ->
@@ -363,6 +518,43 @@ private fun ThemePickerDialog(
                             )
                         }
                     }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                val bigBoardUnlocked = BigBoardUnlock.isUnlocked(level)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 10.dp, horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "📐 Big Board (5×5)",
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (bigBoardUnlocked) {
+                                MaterialTheme.colorScheme.onBackground
+                            } else {
+                                MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
+                            }
+                        )
+                        Text(
+                            text = if (bigBoardUnlocked) {
+                                "More room to play. Applies on your next New Game."
+                            } else {
+                                "🔒 Unlocks at Level ${BigBoardUnlock.UNLOCK_LEVEL}"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
+                        )
+                    }
+                    Switch(
+                        checked = bigBoardEnabled,
+                        onCheckedChange = onToggleBigBoard,
+                        enabled = bigBoardUnlocked
+                    )
                 }
             }
         }
@@ -509,6 +701,7 @@ private fun StreakMilestoneBanner(milestone: Int?, onShown: () -> Unit) {
 
 @Composable
 private fun Board(
+    boardSize: Int,
     tiles: List<Tile>,
     previousTilesById: Map<Int, Tile>,
     movements: List<TileMovement>,
@@ -601,14 +794,14 @@ private fun Board(
                 )
             }
     ) {
-        val cellSize = (maxWidth - spacing * (BOARD_SIZE + 1)) / BOARD_SIZE
+        val cellSize = (maxWidth - spacing * (boardSize + 1)) / boardSize
 
         fun xFor(col: Int): Dp = spacing + (cellSize + spacing) * col
         fun yFor(row: Int): Dp = spacing + (cellSize + spacing) * row
 
         // Static empty-cell backdrop.
-        for (r in 0 until BOARD_SIZE) {
-            for (c in 0 until BOARD_SIZE) {
+        for (r in 0 until boardSize) {
+            for (c in 0 until boardSize) {
                 Box(
                     modifier = Modifier
                         .offset(x = xFor(c), y = yFor(r))
