@@ -6,6 +6,7 @@ import com.example.game2048.logic.Direction
 import com.example.game2048.logic.GameState
 import com.example.game2048.logic.Game2048Engine
 import com.example.game2048.logic.GameStateSerializer
+import com.example.game2048.logic.LevelTracker
 import com.example.game2048.logic.StreakState
 import com.example.game2048.logic.StreakTracker
 import com.example.game2048.logic.Tile
@@ -21,6 +22,7 @@ private const val KEY_GAME_STATE = "game_state"
 private const val KEY_STREAK_CURRENT = "streak_current"
 private const val KEY_STREAK_LONGEST = "streak_longest"
 private const val KEY_STREAK_LAST_DAY = "streak_last_day"
+private const val KEY_CUMULATIVE_SCORE = "cumulative_score"
 
 /**
  * Everything the UI needs to render one frame of the game, including enough detail about
@@ -47,7 +49,15 @@ data class GameUiState(
     val longestStreak: Int = 0,
     /** Highest streak milestone just reached this app open, if any -- shown once, then
      *  cleared via [GameViewModel.onMilestoneBannerShown]. */
-    val justReachedMilestone: Int? = null
+    val justReachedMilestone: Int? = null,
+    /** Player level, derived from cumulative score across every game ever played -- never
+     *  resets when a board does (see [LevelTracker]). */
+    val level: Int = 1,
+    /** Progress toward the next level, in [0f, 1f), for a progress bar. */
+    val levelProgress: Float = 0f,
+    /** The level at the moment the current board started, so the game-over screen can tell
+     *  whether this run leveled the player up. */
+    val levelAtGameStart: Int = 1
 )
 
 /**
@@ -66,16 +76,21 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val current = _uiState.value
         val result = engine.move(current.game, direction)
         if (result.moved) {
+            val gained = result.state.score - current.game.score
             saveBestIfNeeded(result.state.best)
             saveGameState(result.state)
+            val cumulativeScore = loadCumulativeScore() + gained
+            saveCumulativeScore(cumulativeScore)
             _uiState.value = current.copy(
                 game = result.state,
                 lastMovements = result.movements,
                 lastMergedTileIds = result.mergedTileIds,
                 lastSpawnedTileIds = setOfNotNull(result.spawnedTileId),
                 previousTilesById = current.game.tiles.associateBy { it.id },
-                lastScoreGained = result.state.score - current.game.score,
-                moveToken = current.moveToken + 1
+                lastScoreGained = gained,
+                moveToken = current.moveToken + 1,
+                level = LevelTracker.levelForCumulativeScore(cumulativeScore),
+                levelProgress = LevelTracker.progressToNextLevel(cumulativeScore)
             )
         } else {
             _uiState.value = current.copy(invalidMoveToken = current.invalidMoveToken + 1)
@@ -83,7 +98,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun onNewGame() {
-        val fresh = freshGame(best = _uiState.value.game.best)
+        val level = _uiState.value.level
+        val fresh = freshGame(best = _uiState.value.game.best).copy(
+            level = level,
+            levelProgress = _uiState.value.levelProgress,
+            levelAtGameStart = level
+        )
         saveGameState(fresh.game)
         _uiState.value = fresh
     }
@@ -106,10 +126,15 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val updatedStreak = StreakTracker.onAppOpened(previousStreak, todayEpochDay())
         val milestone = StreakTracker.newlyReachedMilestone(previousStreak, updatedStreak)
         saveStreak(updatedStreak)
+        val cumulativeScore = loadCumulativeScore()
+        val level = LevelTracker.levelForCumulativeScore(cumulativeScore)
         return base.copy(
             currentStreak = updatedStreak.current,
             longestStreak = updatedStreak.longest,
-            justReachedMilestone = milestone
+            justReachedMilestone = milestone,
+            level = level,
+            levelProgress = LevelTracker.progressToNextLevel(cumulativeScore),
+            levelAtGameStart = level
         )
     }
 
@@ -170,5 +195,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         if (best > loadBest()) {
             prefs.edit().putInt(KEY_BEST_SCORE, best).commit()
         }
+    }
+
+    private fun loadCumulativeScore(): Long = prefs.getLong(KEY_CUMULATIVE_SCORE, 0L)
+
+    /** commit(), not apply() -- see [saveStreak]: the level is meant to never lose progress,
+     *  so it must survive an abrupt process kill right after a move. */
+    private fun saveCumulativeScore(score: Long) {
+        prefs.edit().putLong(KEY_CUMULATIVE_SCORE, score).commit()
     }
 }

@@ -17,15 +17,20 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -95,6 +100,8 @@ fun GameScreen(viewModel: GameViewModel = viewModel()) {
             scoreGainedThisMove = if (uiState.moveToken > 0) uiState.lastScoreGained else 0,
             moveToken = uiState.moveToken,
             currentStreak = uiState.currentStreak,
+            level = uiState.level,
+            levelProgress = uiState.levelProgress,
             onNewGame = viewModel::onNewGame
         )
 
@@ -130,9 +137,37 @@ fun GameScreen(viewModel: GameViewModel = viewModel()) {
             ) {
                 GameOverlay(
                     title = "Game Over",
-                    buttonLabel = "Try Again",
+                    buttonLabel = "Continue Your Journey",
                     onButtonClick = viewModel::onNewGame
-                )
+                ) {
+                    Spacer(modifier = Modifier.height(14.dp))
+                    Text(
+                        text = "Level ${uiState.level}",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = ClaudeAccent
+                    )
+                    LinearProgressIndicator(
+                        progress = { uiState.levelProgress },
+                        modifier = Modifier
+                            .padding(top = 10.dp)
+                            .width(160.dp)
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp)),
+                        color = ClaudeAccent,
+                        trackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.15f),
+                        drawStopIndicator = {}
+                    )
+                    if (uiState.level > uiState.levelAtGameStart) {
+                        Text(
+                            text = "🎉 Leveled up!",
+                            modifier = Modifier.padding(top = 10.dp),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = ClaudeAccent
+                        )
+                    }
+                }
             }
             androidx.compose.animation.AnimatedVisibility(
                 visible = uiState.game.hasWon && !uiState.game.continuePastWin,
@@ -161,6 +196,8 @@ private fun Header(
     scoreGainedThisMove: Int,
     moveToken: Long,
     currentStreak: Int,
+    level: Int,
+    levelProgress: Float,
     onNewGame: () -> Unit
 ) {
     Row(
@@ -174,9 +211,26 @@ private fun Header(
                 style = MaterialTheme.typography.headlineLarge,
                 color = ClaudeAccent
             )
+            Text(
+                text = "Lv. $level",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+            )
+            LinearProgressIndicator(
+                progress = { levelProgress },
+                modifier = Modifier
+                    .padding(top = 3.dp)
+                    .width(70.dp)
+                    .height(4.dp)
+                    .clip(RoundedCornerShape(2.dp)),
+                color = ClaudeAccent,
+                trackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.15f),
+                drawStopIndicator = {}
+            )
             if (currentStreak >= 1) {
                 Text(
                     text = "🔥 $currentStreak-day streak",
+                    modifier = Modifier.padding(top = 4.dp),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
                 )
@@ -217,6 +271,11 @@ private fun ScoreChip(
         if (moveToken > 0 && scoreGainedThisMove > 0) {
             poppedDelta = scoreGainedThisMove
             delay(SCORE_POPUP_LIFETIME_MS)
+            poppedDelta = null
+        } else {
+            // Covers New Game resetting moveToken back to 0 while a popup from the
+            // previous game was still showing/fading -- otherwise it's stuck forever,
+            // since the branch above (which is what normally clears it) never runs.
             poppedDelta = null
         }
     }
@@ -267,6 +326,11 @@ private fun ComboPopup(comboCount: Int, moveToken: Long, modifier: Modifier = Mo
         if (moveToken > 0 && comboCount >= 2) {
             visibleCombo = comboCount
             delay(COMBO_POPUP_LIFETIME_MS)
+            visibleCombo = null
+        } else {
+            // Covers New Game resetting moveToken back to 0 while a popup from the
+            // previous game was still showing/fading -- otherwise it's stuck forever,
+            // since the branch above (which is what normally clears it) never runs.
             visibleCombo = null
         }
     }
@@ -584,7 +648,12 @@ private fun fontSizeFor(value: Int) = when {
 }
 
 @Composable
-private fun GameOverlay(title: String, buttonLabel: String, onButtonClick: () -> Unit) {
+private fun GameOverlay(
+    title: String,
+    buttonLabel: String,
+    onButtonClick: () -> Unit,
+    extraContent: (@Composable ColumnScope.() -> Unit)? = null
+) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -598,6 +667,7 @@ private fun GameOverlay(title: String, buttonLabel: String, onButtonClick: () ->
                 style = MaterialTheme.typography.headlineLarge,
                 color = MaterialTheme.colorScheme.onBackground
             )
+            extraContent?.invoke(this)
             OutlinedButton(
                 modifier = Modifier.padding(top = 18.dp),
                 onClick = onButtonClick,
