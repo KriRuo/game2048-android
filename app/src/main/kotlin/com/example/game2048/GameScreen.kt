@@ -682,6 +682,12 @@ private fun AnimatedTile(
             delay(SLIDE_DURATION_MS.toLong())
             scale.animateTo(1.16f, tween(MERGE_POP_UP_MS))
             scale.animateTo(1f, tween(MERGE_POP_DOWN_MS))
+        } else if (scale.value != 1f) {
+            // A fast follow-up swipe can cancel this tile's pop-in/merge animation
+            // mid-flight, freezing `scale` at a tiny value forever since neither
+            // branch above would otherwise run again for it. Snap it back to full
+            // size whenever this tile isn't the one animating this move.
+            scale.snapTo(1f)
         }
     }
 
