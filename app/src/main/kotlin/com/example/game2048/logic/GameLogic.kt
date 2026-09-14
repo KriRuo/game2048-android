@@ -1,0 +1,215 @@
+package com.example.game2048.logic
+
+import kotlin.random.Random
+
+/** Board side length. */
+const val BOARD_SIZE = 4
+
+enum class Direction { LEFT, RIGHT, UP, DOWN }
+
+/** A single tile on the board. [id] is stable across moves so the UI can animate it. */
+data class Tile(val id: Int, val value: Int, val row: Int, val col: Int)
+
+/**
+ * Immutable snapshot of the game state. [tiles] holds only occupied cells (no zero-padding).
+ * [nextTileId] is threaded through so every new tile (initial seed or post-move spawn) gets
+ * a fresh, globally unique id without the engine needing mutable internal state.
+ */
+data class GameState(
+    val tiles: List<Tile>,
+    val nextTileId: Int = 1,
+    val score: Int = 0,
+    val best: Int = 0,
+    val isGameOver: Boolean = false,
+    val hasWon: Boolean = false,
+    /** True once the player has dismissed the "You Win" banner and kept playing. */
+    val continuePastWin: Boolean = false
+) {
+    companion object {
+        fun empty(best: Int = 0): GameState = GameState(tiles = emptyList(), best = best)
+    }
+}
+
+/**
+ * Describes how one tile moved during a single [Game2048Engine.move] call, for animation.
+ * [isConsumedByMerge] is true for the "losing" partner of a merge: it slides to ([toRow],
+ * [toCol]) same as its surviving partner and should be animated out (fade/scale to 0) once
+ * it arrives, rather than being drawn as a standalone tile afterwards.
+ */
+data class TileMovement(
+    val tileId: Int,
+    val fromRow: Int,
+    val fromCol: Int,
+    val toRow: Int,
+    val toCol: Int,
+    val isConsumedByMerge: Boolean
+)
+
+/** Result of attempting a move, with enough detail for the UI to animate it. */
+data class MoveResult(
+    val state: GameState,
+    val moved: Boolean,
+    val movements: List<TileMovement> = emptyList(),
+    /** Ids of tiles whose value doubled this move (drive a "pop" scale animation). */
+    val mergedTileIds: Set<Int> = emptySet(),
+    /** Id of the tile spawned after the move, if any (drive a fade/scale-in animation). */
+    val spawnedTileId: Int? = null
+)
+
+/**
+ * Pure game engine for 2048. Holds no Android dependencies so it can be unit tested
+ * (and cross-checked) independently of the UI layer. Tiles carry stable ids through
+ * slides and merges so the Compose UI can animate individual tiles rather than snapping
+ * a raw value grid into place.
+ */
+class Game2048Engine(private val random: Random = Random.Default) {
+
+    /** Starts a fresh game: empty board with two random tiles seeded in. */
+    fun newGame(best: Int = 0): GameState {
+        var state = GameState.empty(best = best)
+        state = spawnTile(state)
+        state = spawnTile(state)
+        return state
+    }
+
+    /**
+     * Applies [direction] to [state]. Returns the resulting state plus per-tile movement
+     * detail the UI can use to animate slides, merges, and the post-move spawn.
+     */
+    fun move(state: GameState, direction: Direction): MoveResult {
+        if (state.isGameOver) return MoveResult(state, moved = false)
+
+        val (newTiles, movements, mergedIds, gained) = applyMove(state.tiles, direction)
+        val changed = gridOf(newTiles) != gridOf(state.tiles)
+        if (!changed) {
+            return MoveResult(state, moved = false)
+        }
+
+        var newState = state.copy(
+            tiles = newTiles,
+            score = state.score + gained,
+            best = maxOf(state.best, state.score + gained)
+        )
+
+        val spawnedState = spawnTile(newState)
+        val spawnedId = spawnedState.tiles.firstOrNull { spawned ->
+            newState.tiles.none { it.id == spawned.id }
+        }?.id
+        newState = spawnedState
+
+        val won = !state.hasWon && newState.tiles.any { it.value >= 2048 }
+        val gameOver = !canAnyMoveBeMade(newState.tiles)
+
+        newState = newState.copy(hasWon = state.hasWon || won, isGameOver = gameOver)
+        return MoveResult(
+            state = newState,
+            moved = true,
+            movements = movements,
+            mergedTileIds = mergedIds,
+            spawnedTileId = spawnedId
+        )
+    }
+
+    /** Adds one random tile (90% a 2, 10% a 4) into a random empty cell, if any exist. */
+    fun spawnTile(state: GameState): GameState {
+        val occupied = state.tiles.map { it.row to it.col }.toSet()
+        val emptyCells = buildList {
+            for (r in 0 until BOARD_SIZE) {
+                for (c in 0 until BOARD_SIZE) {
+                    if ((r to c) !in occupied) add(r to c)
+                }
+            }
+        }
+        if (emptyCells.isEmpty()) return state
+
+        val (r, c) = emptyCells[random.nextInt(emptyCells.size)]
+        val value = if (random.nextInt(10) == 0) 4 else 2
+        val newTile = Tile(id = state.nextTileId, value = value, row = r, col = c)
+        return state.copy(tiles = state.tiles + newTile, nextTileId = state.nextTileId + 1)
+    }
+
+    /** True if there is any empty cell, or any move in any direction would change the board. */
+    fun canAnyMoveBeMade(tiles: List<Tile>): Boolean {
+        val occupied = tiles.map { it.row to it.col }.toSet()
+        if (occupied.size < BOARD_SIZE * BOARD_SIZE) return true
+
+        for (direction in Direction.values()) {
+            val (newTiles, _, _, _) = applyMove(tiles, direction)
+            if (gridOf(newTiles) != gridOf(tiles)) return true
+        }
+        return false
+    }
+
+    private fun gridOf(tiles: List<Tile>): Map<Pair<Int, Int>, Int> =
+        tiles.associate { (it.row to it.col) to it.value }
+
+    private data class LineResult(
+        val newTiles: List<Tile>,
+        val movements: List<TileMovement>,
+        val mergedIds: Set<Int>,
+        val gained: Int
+    )
+
+    /**
+     * Slides and merges [tiles] toward [direction]. Tiles are grouped into "lines" (rows for
+     * LEFT/RIGHT, columns for UP/DOWN), each line is compacted independently, and every tile's
+     * movement is recorded for animation. A tile consumed by a merge (the right-of-pair partner
+     * when sliding left, etc.) keeps its own [TileMovement] with [TileMovement.isConsumedByMerge]
+     * set, targeting the same cell as the tile it merged into, rather than being silently dropped.
+     */
+    private fun applyMove(tiles: List<Tile>, direction: Direction): LineResult {
+        val lines = tiles.groupBy { lineNumber(direction, it.row, it.col) }
+
+        val newTiles = mutableListOf<Tile>()
+        val movements = mutableListOf<TileMovement>()
+        val mergedIds = mutableSetOf<Int>()
+        var gained = 0
+
+        for ((lineNo, lineTiles) in lines) {
+            val ordered = lineTiles.sortedBy { indexInLine(direction, it.row, it.col) }
+            var i = 0
+            var target = 0
+            while (i < ordered.size) {
+                val current = ordered[i]
+                val next = ordered.getOrNull(i + 1)
+                if (next != null && next.value == current.value) {
+                    val newValue = current.value * 2
+                    val (toRow, toCol) = coordFromLine(direction, lineNo, target)
+                    newTiles.add(Tile(current.id, newValue, toRow, toCol))
+                    mergedIds.add(current.id)
+                    gained += newValue
+                    movements.add(TileMovement(current.id, current.row, current.col, toRow, toCol, isConsumedByMerge = false))
+                    movements.add(TileMovement(next.id, next.row, next.col, toRow, toCol, isConsumedByMerge = true))
+                    i += 2
+                } else {
+                    val (toRow, toCol) = coordFromLine(direction, lineNo, target)
+                    newTiles.add(Tile(current.id, current.value, toRow, toCol))
+                    movements.add(TileMovement(current.id, current.row, current.col, toRow, toCol, isConsumedByMerge = false))
+                    i += 1
+                }
+                target += 1
+            }
+        }
+
+        return LineResult(newTiles, movements, mergedIds, gained)
+    }
+
+    private fun lineNumber(direction: Direction, row: Int, col: Int): Int = when (direction) {
+        Direction.LEFT, Direction.RIGHT -> row
+        Direction.UP, Direction.DOWN -> col
+    }
+
+    private fun indexInLine(direction: Direction, row: Int, col: Int): Int = when (direction) {
+        Direction.LEFT -> col
+        Direction.RIGHT -> BOARD_SIZE - 1 - col
+        Direction.UP -> row
+        Direction.DOWN -> BOARD_SIZE - 1 - row
+    }
+
+    private fun coordFromLine(direction: Direction, lineNo: Int, index: Int): Pair<Int, Int> = when (direction) {
+        Direction.LEFT -> lineNo to index
+        Direction.RIGHT -> lineNo to (BOARD_SIZE - 1 - index)
+        Direction.UP -> index to lineNo
+        Direction.DOWN -> (BOARD_SIZE - 1 - index) to lineNo
+    }
+}
