@@ -94,6 +94,7 @@ fun GameScreen(viewModel: GameViewModel = viewModel()) {
             best = uiState.game.best,
             scoreGainedThisMove = if (uiState.moveToken > 0) uiState.lastScoreGained else 0,
             moveToken = uiState.moveToken,
+            currentStreak = uiState.currentStreak,
             onNewGame = viewModel::onNewGame
         )
 
@@ -144,6 +145,11 @@ fun GameScreen(viewModel: GameViewModel = viewModel()) {
                     onButtonClick = viewModel::onContinuePastWin
                 )
             }
+
+            StreakMilestoneBanner(
+                milestone = uiState.justReachedMilestone,
+                onShown = viewModel::onMilestoneBannerShown
+            )
         }
     }
 }
@@ -154,6 +160,7 @@ private fun Header(
     best: Int,
     scoreGainedThisMove: Int,
     moveToken: Long,
+    currentStreak: Int,
     onNewGame: () -> Unit
 ) {
     Row(
@@ -161,11 +168,20 @@ private fun Header(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            text = "2048",
-            style = MaterialTheme.typography.headlineLarge,
-            color = ClaudeAccent
-        )
+        Column {
+            Text(
+                text = "2048",
+                style = MaterialTheme.typography.headlineLarge,
+                color = ClaudeAccent
+            )
+            if (currentStreak >= 1) {
+                Text(
+                    text = "🔥 $currentStreak-day streak",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                )
+            }
+        }
 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             ScoreChip(label = "SCORE", value = score, scoreGainedThisMove = scoreGainedThisMove, moveToken = moveToken)
@@ -270,6 +286,50 @@ private fun ComboPopup(comboCount: Int, moveToken: Long, modifier: Modifier = Mo
             fontWeight = FontWeight.Bold,
             color = ClaudeAccent
         )
+    }
+}
+
+private const val STREAK_MILESTONE_BANNER_LIFETIME_MS = 2200L
+
+/** Full-screen celebration shown once, the first time a streak milestone (3, 7, 14, ...
+ *  days) is reached, then auto-dismisses via [onShown]. */
+@Composable
+private fun StreakMilestoneBanner(milestone: Int?, onShown: () -> Unit) {
+    var shownMilestone by remember { mutableStateOf<Int?>(null) }
+    LaunchedEffect(milestone) {
+        if (milestone != null) {
+            shownMilestone = milestone
+            delay(STREAK_MILESTONE_BANNER_LIFETIME_MS)
+            shownMilestone = null
+            onShown()
+        }
+    }
+
+    AnimatedVisibility(
+        visible = shownMilestone != null,
+        enter = fadeIn(tween(200)) + scaleIn(
+            initialScale = 0.85f,
+            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
+        ),
+        exit = fadeOut(tween(220)) + scaleOut(targetScale = 0.9f, animationSpec = tween(220))
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .clip(RoundedCornerShape(16.dp))
+                .background(MaterialTheme.colorScheme.background.copy(alpha = 0.92f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(text = "🔥", fontSize = 48.sp)
+                Text(
+                    text = "${shownMilestone ?: 0}-Day Streak!",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = ClaudeAccent
+                )
+            }
+        }
     }
 }
 
