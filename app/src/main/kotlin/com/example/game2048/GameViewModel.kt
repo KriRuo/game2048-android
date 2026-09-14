@@ -69,6 +69,11 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private val engine = Game2048Engine()
     private val prefs = application.getSharedPreferences(PREFS_NAME, Application.MODE_PRIVATE)
 
+    // Cached in memory so a move doesn't re-read them from disk every time. Declared before
+    // _uiState because buildInitialState() reads them.
+    private var cumulativeScore: Long = prefs.getLong(KEY_CUMULATIVE_SCORE, 0L)
+    private var bestScore: Int = prefs.getInt(KEY_BEST_SCORE, 0)
+
     private val _uiState = MutableStateFlow(buildInitialState())
     val uiState: StateFlow<GameUiState> = _uiState.asStateFlow()
 
@@ -77,10 +82,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val result = engine.move(current.game, direction)
         if (result.moved) {
             val gained = result.state.score - current.game.score
-            saveBestIfNeeded(result.state.best)
-            saveGameState(result.state)
-            val cumulativeScore = loadCumulativeScore() + gained
-            saveCumulativeScore(cumulativeScore)
+            cumulativeScore += gained
+            val bestChanged = result.state.best > bestScore
+            if (bestChanged) bestScore = result.state.best
+            persist(result.state, includeBest = bestChanged)
             _uiState.value = current.copy(
                 game = result.state,
                 lastMovements = result.movements,
@@ -99,19 +104,19 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     fun onNewGame() {
         val level = _uiState.value.level
-        val fresh = freshGame(best = _uiState.value.game.best).copy(
+        val fresh = freshGame(best = bestScore).copy(
             level = level,
             levelProgress = _uiState.value.levelProgress,
             levelAtGameStart = level
         )
-        saveGameState(fresh.game)
+        persist(fresh.game, includeBest = false)
         _uiState.value = fresh
     }
 
     /** Called when the player dismisses the "You Win" banner and wants to keep playing. */
     fun onContinuePastWin() {
         _uiState.value = _uiState.value.let { it.copy(game = it.game.copy(continuePastWin = true)) }
-        saveGameState(_uiState.value.game)
+        persist(_uiState.value.game, includeBest = false)
     }
 
     /** Called once the milestone celebration banner has finished showing, so it doesn't linger
@@ -126,7 +131,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val updatedStreak = StreakTracker.onAppOpened(previousStreak, todayEpochDay())
         val milestone = StreakTracker.newlyReachedMilestone(previousStreak, updatedStreak)
         saveStreak(updatedStreak)
-        val cumulativeScore = loadCumulativeScore()
         val level = LevelTracker.levelForCumulativeScore(cumulativeScore)
         return base.copy(
             currentStreak = updatedStreak.current,
@@ -166,7 +170,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             .commit()
     }
 
-    private fun freshGame(best: Int = loadBest()): GameUiState {
+    private fun freshGame(best: Int = bestScore): GameUiState {
         val game = engine.newGame(best = best)
         return GameUiState(
             game = game,
@@ -183,25 +187,17 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         return GameUiState(game = game, moveToken = 0L)
     }
 
-    /** commit(), not apply() -- see [saveStreak]: this must survive an abrupt process kill
-     *  moments after a move, which is the exact scenario this save exists to protect against. */
-    private fun saveGameState(state: GameState) {
-        prefs.edit().putString(KEY_GAME_STATE, GameStateSerializer.encode(state)).commit()
-    }
-
-    private fun loadBest(): Int = prefs.getInt(KEY_BEST_SCORE, 0)
-
-    private fun saveBestIfNeeded(best: Int) {
-        if (best > loadBest()) {
-            prefs.edit().putInt(KEY_BEST_SCORE, best).commit()
-        }
-    }
-
-    private fun loadCumulativeScore(): Long = prefs.getLong(KEY_CUMULATIVE_SCORE, 0L)
-
-    /** commit(), not apply() -- see [saveStreak]: the level is meant to never lose progress,
-     *  so it must survive an abrupt process kill right after a move. */
-    private fun saveCumulativeScore(score: Long) {
-        prefs.edit().putLong(KEY_CUMULATIVE_SCORE, score).commit()
+    /**
+     * Writes everything a move changed in ONE synchronous commit. commit(), not apply() --
+     * see [saveStreak]: this must survive an abrupt process kill right after a move, which is
+     * exactly what these saves exist to protect against. Batched into a single edit because
+     * three separate commits per swipe was enough main-thread disk I/O to drop frames.
+     */
+    private fun persist(state: GameState, includeBest: Boolean) {
+        val editor = prefs.edit()
+            .putString(KEY_GAME_STATE, GameStateSerializer.encode(state))
+            .putLong(KEY_CUMULATIVE_SCORE, cumulativeScore)
+        if (includeBest) editor.putInt(KEY_BEST_SCORE, bestScore)
+        editor.commit()
     }
 }

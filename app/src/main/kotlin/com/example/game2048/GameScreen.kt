@@ -105,11 +105,17 @@ fun GameScreen(viewModel: GameViewModel = viewModel()) {
             onNewGame = viewModel::onNewGame
         )
 
-        Box(
+        // Size the board to whichever of the remaining width/height is smaller, so it stays
+        // fully on screen in landscape and on short/large-screen devices. Sizing it purely by
+        // width (fillMaxWidth + aspectRatio) makes it taller than the screen in landscape,
+        // pushing the header and buttons out of view entirely.
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxWidth()
+                .weight(1f)
                 .padding(top = 24.dp)
         ) {
+        Box(modifier = Modifier.size(minOf(maxWidth, maxHeight)).align(Alignment.TopCenter)) {
             Board(
                 tiles = uiState.game.tiles,
                 previousTilesById = uiState.previousTilesById,
@@ -170,7 +176,9 @@ fun GameScreen(viewModel: GameViewModel = viewModel()) {
                 }
             }
             androidx.compose.animation.AnimatedVisibility(
-                visible = uiState.game.hasWon && !uiState.game.continuePastWin,
+                // Not when the game is also over: both overlays would stack and render on top
+                // of each other, and "Keep Going" would be a lie -- there are no moves left.
+                visible = uiState.game.hasWon && !uiState.game.continuePastWin && !uiState.game.isGameOver,
                 enter = fadeIn(tween(220)) + scaleIn(initialScale = 0.9f, animationSpec = tween(220)),
                 exit = fadeOut(tween(120))
             ) {
@@ -185,6 +193,7 @@ fun GameScreen(viewModel: GameViewModel = viewModel()) {
                 milestone = uiState.justReachedMilestone,
                 onShown = viewModel::onMilestoneBannerShown
             )
+        }
         }
     }
 }
