@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,12 +29,15 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -57,18 +61,13 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.game2048.logic.BOARD_SIZE
 import com.example.game2048.logic.Direction
+import com.example.game2048.logic.ThemeUnlocks
 import com.example.game2048.logic.Tile
 import com.example.game2048.logic.TileMovement
-import com.example.game2048.ui.theme.ClaudeAccent
-import com.example.game2048.ui.theme.DarkBoardFrame
-import com.example.game2048.ui.theme.DarkEmptyCell
-import com.example.game2048.ui.theme.DarkSurfaceChip
-import com.example.game2048.ui.theme.LightBoardFrame
-import com.example.game2048.ui.theme.LightEmptyCell
-import com.example.game2048.ui.theme.LightSurfaceChip
+import com.example.game2048.logic.TilePalette
 import com.example.game2048.ui.theme.LocalIsDarkTheme
-import com.example.game2048.ui.theme.tileColor
-import com.example.game2048.ui.theme.tileTextColor
+import com.example.game2048.ui.theme.LocalPaletteColors
+import com.example.game2048.ui.theme.paletteColorsFor
 import kotlin.math.abs
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -85,7 +84,6 @@ private const val COMBO_POPUP_LIFETIME_MS = 900L
 @Composable
 fun GameScreen(viewModel: GameViewModel = viewModel()) {
     val uiState by viewModel.uiState.collectAsState()
-    val isDark = LocalIsDarkTheme.current
 
     Column(
         modifier = Modifier
@@ -102,7 +100,9 @@ fun GameScreen(viewModel: GameViewModel = viewModel()) {
             currentStreak = uiState.currentStreak,
             level = uiState.level,
             levelProgress = uiState.levelProgress,
-            onNewGame = viewModel::onNewGame
+            selectedPalette = uiState.selectedPalette,
+            onNewGame = viewModel::onNewGame,
+            onSelectPalette = viewModel::onSelectPalette
         )
 
         // Size the board to whichever of the remaining width/height is smaller, so it stays
@@ -124,7 +124,6 @@ fun GameScreen(viewModel: GameViewModel = viewModel()) {
                 spawnedTileIds = uiState.lastSpawnedTileIds,
                 moveToken = uiState.moveToken,
                 invalidMoveToken = uiState.invalidMoveToken,
-                isDark = isDark,
                 onSwipe = viewModel::onSwipe
             )
 
@@ -146,12 +145,13 @@ fun GameScreen(viewModel: GameViewModel = viewModel()) {
                     buttonLabel = "Continue Your Journey",
                     onButtonClick = viewModel::onNewGame
                 ) {
+                    val accent = LocalPaletteColors.current.accent
                     Spacer(modifier = Modifier.height(14.dp))
                     Text(
                         text = "Level ${uiState.level}",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = ClaudeAccent
+                        color = accent
                     )
                     LinearProgressIndicator(
                         progress = { uiState.levelProgress },
@@ -160,7 +160,7 @@ fun GameScreen(viewModel: GameViewModel = viewModel()) {
                             .width(160.dp)
                             .height(6.dp)
                             .clip(RoundedCornerShape(3.dp)),
-                        color = ClaudeAccent,
+                        color = accent,
                         trackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.15f),
                         drawStopIndicator = {}
                     )
@@ -170,7 +170,16 @@ fun GameScreen(viewModel: GameViewModel = viewModel()) {
                             modifier = Modifier.padding(top = 10.dp),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = ClaudeAccent
+                            color = accent
+                        )
+                    }
+                    ThemeUnlocks.newlyUnlocked(uiState.levelAtGameStart, uiState.level)?.let { unlocked ->
+                        Text(
+                            text = "🎨 New theme unlocked: ${unlocked.displayName}!",
+                            modifier = Modifier.padding(top = 10.dp),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = accent
                         )
                     }
                 }
@@ -207,8 +216,13 @@ private fun Header(
     currentStreak: Int,
     level: Int,
     levelProgress: Float,
-    onNewGame: () -> Unit
+    selectedPalette: TilePalette,
+    onNewGame: () -> Unit,
+    onSelectPalette: (TilePalette) -> Unit
 ) {
+    val accent = LocalPaletteColors.current.accent
+    var showThemePicker by remember { mutableStateOf(false) }
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -218,7 +232,7 @@ private fun Header(
             Text(
                 text = "2048",
                 style = MaterialTheme.typography.headlineLarge,
-                color = ClaudeAccent
+                color = accent
             )
             Text(
                 text = "Lv. $level",
@@ -232,7 +246,7 @@ private fun Header(
                     .width(70.dp)
                     .height(4.dp)
                     .clip(RoundedCornerShape(2.dp)),
-                color = ClaudeAccent,
+                color = accent,
                 trackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.15f),
                 drawStopIndicator = {}
             )
@@ -256,16 +270,103 @@ private fun Header(
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 14.dp),
-        horizontalArrangement = Arrangement.End
+        horizontalArrangement = Arrangement.End,
+        verticalAlignment = Alignment.CenterVertically
     ) {
+        OutlinedButton(
+            onClick = { showThemePicker = true },
+            shape = RoundedCornerShape(10.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = accent)
+        ) {
+            Text("🎨 Theme", fontWeight = FontWeight.SemiBold)
+        }
+        Spacer(modifier = Modifier.width(10.dp))
         OutlinedButton(
             onClick = onNewGame,
             shape = RoundedCornerShape(10.dp),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = ClaudeAccent)
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = accent)
         ) {
             Text("New Game", fontWeight = FontWeight.SemiBold)
         }
     }
+
+    if (showThemePicker) {
+        ThemePickerDialog(
+            currentPalette = selectedPalette,
+            level = level,
+            onSelect = {
+                onSelectPalette(it)
+                showThemePicker = false
+            },
+            onDismiss = { showThemePicker = false }
+        )
+    }
+}
+
+@Composable
+private fun ThemePickerDialog(
+    currentPalette: TilePalette,
+    level: Int,
+    onSelect: (TilePalette) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val isDark = LocalIsDarkTheme.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        },
+        title = { Text("Choose a Theme") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                TilePalette.entries.forEach { palette ->
+                    val unlocked = ThemeUnlocks.isUnlocked(palette, level)
+                    val swatchColor = paletteColorsFor(palette, isDark).accent
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .then(if (unlocked) Modifier.clickable { onSelect(palette) } else Modifier)
+                            .padding(vertical = 10.dp, horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(if (unlocked) swatchColor else swatchColor.copy(alpha = 0.35f))
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = palette.displayName,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (unlocked) {
+                                    MaterialTheme.colorScheme.onBackground
+                                } else {
+                                    MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
+                                }
+                            )
+                            if (!unlocked) {
+                                Text(
+                                    text = "🔒 Unlocks at Level ${palette.unlockLevel}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
+                                )
+                            }
+                        }
+                        if (palette == currentPalette) {
+                            Text(
+                                text = "✓",
+                                color = LocalPaletteColors.current.accent,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    )
 }
 
 @Composable
@@ -290,11 +391,11 @@ private fun ScoreChip(
     }
 
     Box {
-        val isDark = LocalIsDarkTheme.current
+        val palette = LocalPaletteColors.current
         Column(
             modifier = Modifier
                 .clip(RoundedCornerShape(10.dp))
-                .background(if (isDark) DarkSurfaceChip else LightSurfaceChip)
+                .background(palette.surfaceChip)
                 .padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
@@ -319,7 +420,7 @@ private fun ScoreChip(
         ) {
             Text(
                 text = "+${poppedDelta ?: 0}",
-                color = ClaudeAccent,
+                color = palette.accent,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp
             )
@@ -357,7 +458,7 @@ private fun ComboPopup(comboCount: Int, moveToken: Long, modifier: Modifier = Mo
             text = "×${visibleCombo ?: 0} Combo!",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
-            color = ClaudeAccent
+            color = LocalPaletteColors.current.accent
         )
     }
 }
@@ -399,7 +500,7 @@ private fun StreakMilestoneBanner(milestone: Int?, onShown: () -> Unit) {
                     text = "${shownMilestone ?: 0}-Day Streak!",
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
-                    color = ClaudeAccent
+                    color = LocalPaletteColors.current.accent
                 )
             }
         }
@@ -415,9 +516,9 @@ private fun Board(
     spawnedTileIds: Set<Int>,
     moveToken: Long,
     invalidMoveToken: Long,
-    isDark: Boolean,
     onSwipe: (Direction) -> Unit
 ) {
+    val palette = LocalPaletteColors.current
     val haptics = LocalHapticFeedback.current
     val shakeOffset = remember { Animatable(0f) }
 
@@ -471,7 +572,7 @@ private fun Board(
             .aspectRatio(1f)
             .offset(x = shakeOffset.value.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(if (isDark) DarkBoardFrame else LightBoardFrame)
+            .background(palette.boardFrame)
             .pointerInput(Unit) {
                 var dragAmountX = 0f
                 var dragAmountY = 0f
@@ -513,7 +614,7 @@ private fun Board(
                         .offset(x = xFor(c), y = yFor(r))
                         .size(cellSize)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(if (isDark) DarkEmptyCell else LightEmptyCell)
+                        .background(palette.emptyCell)
                 )
             }
         }
@@ -527,8 +628,7 @@ private fun Board(
                     fromY = yFor(ghost.fromRow),
                     toX = xFor(ghost.toCol),
                     toY = yFor(ghost.toRow),
-                    cellSize = cellSize,
-                    isDark = isDark
+                    cellSize = cellSize
                 )
             }
         }
@@ -543,8 +643,7 @@ private fun Board(
                     cellSize = cellSize,
                     isMerged = moveToken > 0 && tile.id in mergedTileIds,
                     isSpawned = tile.id in spawnedTileIds,
-                    moveToken = moveToken,
-                    isDark = isDark
+                    moveToken = moveToken
                 )
             }
         }
@@ -559,9 +658,9 @@ private fun AnimatedTile(
     cellSize: Dp,
     isMerged: Boolean,
     isSpawned: Boolean,
-    moveToken: Long,
-    isDark: Boolean
+    moveToken: Long
 ) {
+    val palette = LocalPaletteColors.current
     val animatedX by animateDpAsState(
         targetValue = x,
         animationSpec = tween(SLIDE_DURATION_MS, easing = FastOutSlowInEasing),
@@ -595,12 +694,12 @@ private fun AnimatedTile(
                 scaleY = scale.value
             }
             .clip(RoundedCornerShape(10.dp))
-            .background(tileColor(tile.value, isDark)),
+            .background(palette.tileColor(tile.value)),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = tile.value.toString(),
-            color = tileTextColor(tile.value, isDark),
+            color = palette.tileTextColor(tile.value),
             fontWeight = FontWeight.Bold,
             fontSize = fontSizeFor(tile.value)
         )
@@ -614,9 +713,9 @@ private fun GhostTile(
     fromY: Dp,
     toX: Dp,
     toY: Dp,
-    cellSize: Dp,
-    isDark: Boolean
+    cellSize: Dp
 ) {
+    val palette = LocalPaletteColors.current
     // Animate as plain Float (dp magnitude) rather than Animatable<Dp, _> to avoid depending
     // on the exact name/location of Compose's Dp vector-converter across versions.
     val x = remember { Animatable(fromX.value) }
@@ -638,12 +737,12 @@ private fun GhostTile(
             .size(cellSize)
             .graphicsLayer { this.alpha = alpha.value }
             .clip(RoundedCornerShape(10.dp))
-            .background(tileColor(value, isDark)),
+            .background(palette.tileColor(value)),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = value.toString(),
-            color = tileTextColor(value, isDark),
+            color = palette.tileTextColor(value),
             fontWeight = FontWeight.Bold,
             fontSize = fontSizeFor(value)
         )
@@ -681,7 +780,7 @@ private fun GameOverlay(
                 modifier = Modifier.padding(top = 18.dp),
                 onClick = onButtonClick,
                 shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = ClaudeAccent)
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = LocalPaletteColors.current.accent)
             ) {
                 Text(buttonLabel, fontWeight = FontWeight.SemiBold)
             }

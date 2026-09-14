@@ -9,7 +9,9 @@ import com.example.game2048.logic.GameStateSerializer
 import com.example.game2048.logic.LevelTracker
 import com.example.game2048.logic.StreakState
 import com.example.game2048.logic.StreakTracker
+import com.example.game2048.logic.ThemeUnlocks
 import com.example.game2048.logic.Tile
+import com.example.game2048.logic.TilePalette
 import com.example.game2048.logic.TileMovement
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,6 +25,7 @@ private const val KEY_STREAK_CURRENT = "streak_current"
 private const val KEY_STREAK_LONGEST = "streak_longest"
 private const val KEY_STREAK_LAST_DAY = "streak_last_day"
 private const val KEY_CUMULATIVE_SCORE = "cumulative_score"
+private const val KEY_SELECTED_PALETTE = "selected_palette"
 
 /**
  * Everything the UI needs to render one frame of the game, including enough detail about
@@ -57,7 +60,9 @@ data class GameUiState(
     val levelProgress: Float = 0f,
     /** The level at the moment the current board started, so the game-over screen can tell
      *  whether this run leveled the player up. */
-    val levelAtGameStart: Int = 1
+    val levelAtGameStart: Int = 1,
+    /** The currently-active tile color palette (see [TilePalette]). */
+    val selectedPalette: TilePalette = TilePalette.DEFAULT
 )
 
 /**
@@ -73,6 +78,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     // _uiState because buildInitialState() reads them.
     private var cumulativeScore: Long = prefs.getLong(KEY_CUMULATIVE_SCORE, 0L)
     private var bestScore: Int = prefs.getInt(KEY_BEST_SCORE, 0)
+    private var selectedPalette: TilePalette = TilePalette.fromId(prefs.getString(KEY_SELECTED_PALETTE, null))
 
     private val _uiState = MutableStateFlow(buildInitialState())
     val uiState: StateFlow<GameUiState> = _uiState.asStateFlow()
@@ -107,10 +113,20 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val fresh = freshGame(best = bestScore).copy(
             level = level,
             levelProgress = _uiState.value.levelProgress,
-            levelAtGameStart = level
+            levelAtGameStart = level,
+            selectedPalette = selectedPalette
         )
         persist(fresh.game, includeBest = false)
         _uiState.value = fresh
+    }
+
+    /** No-ops if [palette] isn't unlocked yet at the player's current level. */
+    fun onSelectPalette(palette: TilePalette) {
+        val current = _uiState.value
+        if (!ThemeUnlocks.isUnlocked(palette, current.level)) return
+        selectedPalette = palette
+        prefs.edit().putString(KEY_SELECTED_PALETTE, palette.id).commit()
+        _uiState.value = current.copy(selectedPalette = palette)
     }
 
     /** Called when the player dismisses the "You Win" banner and wants to keep playing. */
@@ -138,7 +154,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             justReachedMilestone = milestone,
             level = level,
             levelProgress = LevelTracker.progressToNextLevel(cumulativeScore),
-            levelAtGameStart = level
+            levelAtGameStart = level,
+            selectedPalette = selectedPalette
         )
     }
 

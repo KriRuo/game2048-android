@@ -8,35 +8,44 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import com.example.game2048.logic.TilePalette
 
 /** Whether the game's own warm palette should use its dark variant right now. */
 val LocalIsDarkTheme = staticCompositionLocalOf { false }
 
-private val LightColors = lightColorScheme(
-    primary = ClaudeAccent,
-    onPrimary = Color.White,
-    background = LightBackground,
-    surface = LightBackground,
-    onBackground = LightTextPrimary,
-    onSurface = LightTextPrimary
-)
-
-private val DarkColors = darkColorScheme(
-    primary = ClaudeAccent,
-    onPrimary = Color.White,
-    background = DarkBackground,
-    surface = DarkBackground,
-    onBackground = DarkTextPrimary,
-    onSurface = DarkTextPrimary
-)
+/** The resolved colors for the currently-selected [TilePalette]; see [paletteColorsFor]. */
+val LocalPaletteColors = staticCompositionLocalOf { paletteColorsFor(TilePalette.DEFAULT, isDark = false) }
 
 @Composable
 fun Game2048Theme(
+    palette: TilePalette = TilePalette.DEFAULT,
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    val colorScheme = if (darkTheme) DarkColors else LightColors
-    CompositionLocalProvider(LocalIsDarkTheme provides darkTheme) {
+    val paletteColors = paletteColorsFor(palette, darkTheme)
+    val colorScheme = if (darkTheme) {
+        darkColorScheme(
+            primary = paletteColors.accent,
+            onPrimary = Color.White,
+            background = paletteColors.background,
+            surface = paletteColors.background,
+            onBackground = paletteColors.textPrimary,
+            onSurface = paletteColors.textPrimary
+        )
+    } else {
+        lightColorScheme(
+            primary = paletteColors.accent,
+            onPrimary = Color.White,
+            background = paletteColors.background,
+            surface = paletteColors.background,
+            onBackground = paletteColors.textPrimary,
+            onSurface = paletteColors.textPrimary
+        )
+    }
+    CompositionLocalProvider(
+        LocalIsDarkTheme provides darkTheme,
+        LocalPaletteColors provides paletteColors
+    ) {
         MaterialTheme(
             colorScheme = colorScheme,
             typography = Typography,
