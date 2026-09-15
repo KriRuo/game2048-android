@@ -99,8 +99,149 @@ private const val SCORE_POPUP_LIFETIME_MS = 700L
 private val JOKER_BAR_RESERVED_HEIGHT = 96.dp
 private const val COMBO_POPUP_LIFETIME_MS = 900L
 
+private enum class AppScreen { START, GAME }
+
+/** True entry point: owns which of [AppScreen]'s two screens is showing. Deciding this once
+ *  per process (via [remember], not derived every recomposition) is what makes Original vs.
+ *  Extended a real up-front choice instead of something [Header]'s old in-game dialog let you
+ *  silently flip mid-board -- see [StartScreen] and [GameScreen]'s Home button. */
 @Composable
-fun GameScreen(viewModel: GameViewModel = viewModel()) {
+fun Game2048App(viewModel: GameViewModel = viewModel()) {
+    val uiState by viewModel.uiState.collectAsState()
+    var screen by remember { mutableStateOf(initialScreenFor(uiState)) }
+
+    when (screen) {
+        AppScreen.START -> StartScreen(
+            uiState = uiState,
+            onSelectGameMode = viewModel::onSelectGameMode,
+            onPlay = {
+                // A game-over board can't be "resumed" -- start fresh in whichever mode was
+                // just picked. An in-progress (or brand new, unplayed) board is left alone so
+                // Play always means "go look at the board that's already there."
+                if (uiState.game.isGameOver) viewModel.onNewGame()
+                screen = AppScreen.GAME
+            }
+        )
+        AppScreen.GAME -> GameScreen(viewModel = viewModel, onNavigateHome = { screen = AppScreen.START })
+    }
+}
+
+/** Skips straight to the board only if there's a genuinely in-progress game to resume (real
+ *  progress made, and not already over) -- a fresh/never-played or finished board sends the
+ *  player to [StartScreen] first, so they always get a live chance to pick the mode rather
+ *  than inheriting whatever it happened to be last. */
+private fun initialScreenFor(uiState: GameUiState): AppScreen =
+    if (uiState.game.score > 0 && !uiState.game.isGameOver) AppScreen.GAME else AppScreen.START
+
+/** Landing screen: pick Original or Extended, then Play. The only two ways back here are
+ *  finishing a game (its overlay's button goes home, not straight into a new one) or tapping
+ *  the board screen's Home icon -- picking a mode is otherwise never possible mid-game. */
+@Composable
+private fun StartScreen(
+    uiState: GameUiState,
+    onSelectGameMode: (GameMode) -> Unit,
+    onPlay: () -> Unit
+) {
+    val accent = LocalPaletteColors.current.accent
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(horizontal = 28.dp, vertical = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(modifier = Modifier.weight(1f))
+        Text(
+            text = "2048",
+            style = MaterialTheme.typography.displayMedium,
+            fontWeight = FontWeight.Bold,
+            color = accent
+        )
+        Text(
+            text = "Lv. ${uiState.level} · Best ${uiState.game.best}",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+            modifier = Modifier.padding(top = 4.dp)
+        )
+        Text(
+            text = "Choose how you want to play",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+            modifier = Modifier.padding(top = 20.dp)
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            GameMode.entries.forEach { mode ->
+                StartModeCard(
+                    mode = mode,
+                    selected = mode == uiState.gameMode,
+                    onClick = { onSelectGameMode(mode) }
+                )
+            }
+        }
+        Spacer(modifier = Modifier.weight(1f))
+        OutlinedButton(
+            onClick = onPlay,
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = accent),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                text = "Play",
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp,
+                modifier = Modifier.padding(vertical = 6.dp)
+            )
+        }
+    }
+}
+
+/** One selectable mode option on [StartScreen]. */
+@Composable
+private fun StartModeCard(mode: GameMode, selected: Boolean, onClick: () -> Unit) {
+    val palette = LocalPaletteColors.current
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(if (selected) palette.accent.copy(alpha = 0.15f) else palette.surfaceChip)
+            .then(
+                if (selected) {
+                    Modifier.border(2.dp, palette.accent, RoundedCornerShape(14.dp))
+                } else {
+                    Modifier
+                }
+            )
+            .clickable(onClick = onClick)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = mode.displayName,
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Text(
+                text = modeDescription(mode),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                modifier = Modifier.padding(top = 2.dp)
+            )
+        }
+        if (selected) {
+            Text(text = "✓", color = palette.accent, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+        }
+    }
+}
+
+@Composable
+fun GameScreen(viewModel: GameViewModel = viewModel(), onNavigateHome: () -> Unit) {
     val uiState by viewModel.uiState.collectAsState()
 
     // Landscape gets its own layout (sidebar + board side by side) rather than reusing the
@@ -128,18 +269,22 @@ fun GameScreen(viewModel: GameViewModel = viewModel()) {
                     levelProgress = uiState.levelProgress,
                     selectedPalette = uiState.selectedPalette,
                     selectedBoardSize = uiState.selectedBoardSize,
-                    gameMode = uiState.gameMode,
                     gamesPlayed = uiState.gamesPlayed,
                     highestTileEver = uiState.highestTileEver,
                     totalMerges = uiState.totalMerges,
                     onNewGame = viewModel::onNewGame,
                     onSelectPalette = viewModel::onSelectPalette,
                     onSelectBoardSize = viewModel::onSelectBoardSize,
-                    onSelectGameMode = viewModel::onSelectGameMode,
                     onDebugJumpToLevel30 = viewModel::onDebugJumpToLevel30,
+                    onNavigateHome = onNavigateHome,
                     modifier = Modifier.padding(end = 24.dp)
                 )
-                BoardArea(uiState = uiState, viewModel = viewModel, modifier = Modifier.weight(1f).fillMaxHeight())
+                BoardArea(
+                    uiState = uiState,
+                    viewModel = viewModel,
+                    onNavigateHome = onNavigateHome,
+                    modifier = Modifier.weight(1f).fillMaxHeight()
+                )
             }
         } else {
             Column(
@@ -158,19 +303,19 @@ fun GameScreen(viewModel: GameViewModel = viewModel()) {
                     levelProgress = uiState.levelProgress,
                     selectedPalette = uiState.selectedPalette,
                     selectedBoardSize = uiState.selectedBoardSize,
-                    gameMode = uiState.gameMode,
                     gamesPlayed = uiState.gamesPlayed,
                     highestTileEver = uiState.highestTileEver,
                     totalMerges = uiState.totalMerges,
                     onNewGame = viewModel::onNewGame,
                     onSelectPalette = viewModel::onSelectPalette,
                     onSelectBoardSize = viewModel::onSelectBoardSize,
-                    onSelectGameMode = viewModel::onSelectGameMode,
-                    onDebugJumpToLevel30 = viewModel::onDebugJumpToLevel30
+                    onDebugJumpToLevel30 = viewModel::onDebugJumpToLevel30,
+                    onNavigateHome = onNavigateHome
                 )
                 BoardArea(
                     uiState = uiState,
                     viewModel = viewModel,
+                    onNavigateHome = onNavigateHome,
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)
@@ -186,7 +331,12 @@ fun GameScreen(viewModel: GameViewModel = viewModel()) {
  *  always a full square that fits -- callers give it either the width-minus-sidebar
  *  (landscape) or the width (portrait) as the constraining dimension. */
 @Composable
-private fun BoardArea(uiState: GameUiState, viewModel: GameViewModel, modifier: Modifier = Modifier) {
+private fun BoardArea(
+    uiState: GameUiState,
+    viewModel: GameViewModel,
+    onNavigateHome: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     // Extended mode reserves a strip below the board for the Joker action bar; Original mode
     // (no bar) lets the board claim the full square again.
     val showJokerBar = uiState.gameMode == GameMode.EXTENDED
@@ -243,8 +393,11 @@ private fun BoardArea(uiState: GameUiState, viewModel: GameViewModel, modifier: 
                 ) {
                     GameOverlay(
                         title = "Game Over",
-                        buttonLabel = "Continue Your Journey",
-                        onButtonClick = viewModel::onNewGame
+                        // Goes home rather than starting a new game directly: game-over is one
+                        // of the two moments (the other is the Home icon) where the player is
+                        // meant to reconsider Original vs. Extended, per StartScreen.
+                        buttonLabel = "Play Again",
+                        onButtonClick = onNavigateHome
                     ) {
                         val accent = LocalPaletteColors.current.accent
                         Spacer(modifier = Modifier.height(14.dp))
@@ -349,19 +502,17 @@ private fun Header(
     levelProgress: Float,
     selectedPalette: TilePalette,
     selectedBoardSize: BoardSizeOption,
-    gameMode: GameMode,
     gamesPlayed: Int,
     highestTileEver: Int,
     totalMerges: Long,
     onNewGame: () -> Unit,
     onSelectPalette: (TilePalette) -> Unit,
     onSelectBoardSize: (BoardSizeOption) -> Unit,
-    onSelectGameMode: (GameMode) -> Unit,
-    onDebugJumpToLevel30: () -> Unit
+    onDebugJumpToLevel30: () -> Unit,
+    onNavigateHome: () -> Unit
 ) {
     val accent = LocalPaletteColors.current.accent
     var showThemePicker by remember { mutableStateOf(false) }
-    var showModePicker by remember { mutableStateOf(false) }
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -370,15 +521,15 @@ private fun Header(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             OutlinedButton(
-                onClick = { showModePicker = true },
+                onClick = onNavigateHome,
                 shape = RoundedCornerShape(10.dp),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = accent),
                 contentPadding = PaddingValues(12.dp),
                 modifier = Modifier
                     .padding(end = 10.dp)
-                    .semantics { contentDescription = "Game menu" }
+                    .semantics { contentDescription = "Home" }
             ) {
-                Text("☰", fontSize = 18.sp, maxLines = 1)
+                Text("🏠", fontSize = 18.sp, maxLines = 1)
             }
             Column {
                 Text(
@@ -472,17 +623,6 @@ private fun Header(
             onDismiss = { showThemePicker = false }
         )
     }
-
-    if (showModePicker) {
-        GameModeDialog(
-            currentMode = gameMode,
-            onSelect = {
-                onSelectGameMode(it)
-                showModePicker = false
-            },
-            onDismiss = { showModePicker = false }
-        )
-    }
 }
 
 /** Landscape counterpart to [Header]: the same wordmark/level/streak/scores/buttons, but
@@ -499,20 +639,18 @@ private fun Sidebar(
     levelProgress: Float,
     selectedPalette: TilePalette,
     selectedBoardSize: BoardSizeOption,
-    gameMode: GameMode,
     gamesPlayed: Int,
     highestTileEver: Int,
     totalMerges: Long,
     onNewGame: () -> Unit,
     onSelectPalette: (TilePalette) -> Unit,
     onSelectBoardSize: (BoardSizeOption) -> Unit,
-    onSelectGameMode: (GameMode) -> Unit,
     onDebugJumpToLevel30: () -> Unit,
+    onNavigateHome: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val accent = LocalPaletteColors.current.accent
     var showThemePicker by remember { mutableStateOf(false) }
-    var showModePicker by remember { mutableStateOf(false) }
 
     // fillMaxHeight + verticalScroll: three buttons plus the wordmark/level/streak/scores no
     // longer reliably fit a short landscape screen's height (the row that added Undo was the
@@ -527,13 +665,13 @@ private fun Sidebar(
             .verticalScroll(rememberScrollState())
     ) {
         OutlinedButton(
-            onClick = { showModePicker = true },
+            onClick = onNavigateHome,
             shape = RoundedCornerShape(10.dp),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = accent),
             contentPadding = PaddingValues(12.dp),
-            modifier = Modifier.semantics { contentDescription = "Game menu" }
+            modifier = Modifier.semantics { contentDescription = "Home" }
         ) {
-            Text("☰", fontSize = 18.sp, maxLines = 1)
+            Text("🏠", fontSize = 18.sp, maxLines = 1)
         }
         Spacer(modifier = Modifier.height(10.dp))
         Text(
@@ -613,67 +751,13 @@ private fun Sidebar(
             onDismiss = { showThemePicker = false }
         )
     }
-
-    if (showModePicker) {
-        GameModeDialog(
-            currentMode = gameMode,
-            onSelect = {
-                onSelectGameMode(it)
-                showModePicker = false
-            },
-            onDismiss = { showModePicker = false }
-        )
-    }
 }
 
-@Composable
-private fun GameModeDialog(
-    currentMode: GameMode,
-    onSelect: (GameMode) -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text("Close") }
-        },
-        title = { Text("Choose game") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                GameMode.entries.forEach { mode ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .clickable { onSelect(mode) }
-                            .padding(vertical = 10.dp, horizontal = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(text = mode.displayName, fontWeight = FontWeight.SemiBold)
-                            Text(
-                                text = if (mode == GameMode.ORIGINAL) {
-                                    "Classic rules: swipe to move, no Undo, no Jokers."
-                                } else {
-                                    "Adds Undo plus the Teleport, Swap, Rotate, Double, and Bomb Jokers."
-                                },
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
-                            )
-                        }
-                        if (mode == currentMode) {
-                            Text(
-                                text = "✓",
-                                color = LocalPaletteColors.current.accent,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    )
+/** One-line description of a [GameMode], shown on [StartModeCard] -- the only place mode is
+ *  chosen now (see [StartScreen]). */
+private fun modeDescription(mode: GameMode): String = when (mode) {
+    GameMode.ORIGINAL -> "Classic rules: swipe to move, no Undo, no Jokers."
+    GameMode.EXTENDED -> "Adds Undo plus the Teleport, Swap, Rotate, Double, and Bomb Jokers."
 }
 
 @Composable

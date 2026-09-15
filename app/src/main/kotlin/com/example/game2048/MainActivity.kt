@@ -20,7 +20,7 @@ class MainActivity : ComponentActivity() {
             val viewModel: GameViewModel = viewModel()
             val uiState by viewModel.uiState.collectAsState()
             Game2048Theme(palette = uiState.selectedPalette) {
-                GameScreen(viewModel = viewModel)
+                Game2048App(viewModel = viewModel)
             }
         }
     }
