@@ -162,13 +162,12 @@ private fun StartScreen(
     onPlay: () -> Unit
 ) {
     val accent = LocalPaletteColors.current.accent
-    // verticalScroll, not the weight(1f)-spacer centering this used before: with a fixed-size
-    // 220dp flourish plus title/chips/heading/two mode cards, this content doesn't reliably fit
-    // a shorter screen or a larger system font scale -- and unlike a Row, Column content taller
-    // than its parent isn't clipped or scrollable by default, it just silently renders past (or
-    // straight through) the bottom edge, which is exactly what made Play unreadable on a real
-    // Samsung. Same failure mode, same fix, as [Sidebar]'s own verticalScroll below.
-    Column(
+    // BoxWithConstraints, not a fixed-size flourish: sizing it (and the gaps around it) as a
+    // fraction of whatever height is actually available is what makes this fit a real range of
+    // screens/font scales without scrolling, rather than fitting only the one screen size this
+    // was eyeballed against. verticalScroll stays on as a last-resort safety net -- e.g. a
+    // maxed-out system font size -- but the layout is meant to never need it in practice.
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
@@ -176,71 +175,77 @@ private fun StartScreen(
             // Play can end up sitting under -- or right against -- a gesture nav bar/cutout on
             // devices where that inset is taller than the emulator's.
             .windowInsetsPadding(WindowInsets.safeDrawing)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 28.dp, vertical = 32.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(modifier = Modifier.height(24.dp))
-        Text(
-            text = "2048",
-            style = MaterialTheme.typography.displayMedium,
-            fontWeight = FontWeight.Bold,
-            color = accent
-        )
-        Row(
-            modifier = Modifier.padding(top = 10.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            ScoreChip(label = "LEVEL", value = uiState.level)
-            ScoreChip(label = "BEST", value = uiState.game.best)
-        }
-        if (uiState.currentStreak >= 1) {
-            Text(
-                text = "🔥 ${uiState.currentStreak}-day streak",
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
-                modifier = Modifier.padding(top = 8.dp)
-            )
-        }
-        Text(
-            text = "CHOOSE HOW YOU WANT TO PLAY",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.Bold,
-            letterSpacing = 1.sp,
-            color = accent,
-            modifier = Modifier.padding(top = 28.dp)
-        )
-        Spacer(modifier = Modifier.height(14.dp))
+        // 24% of the available height, clamped to a sane range -- shrinks on short screens
+        // instead of pushing everything below it off-screen.
+        val orbitDiameter = (maxHeight * 0.24f).coerceIn(110.dp, 200.dp)
         Column(
-            modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 28.dp, vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            GameMode.entries.forEach { mode ->
-                StartModeCard(
-                    mode = mode,
-                    selected = mode == uiState.gameMode,
-                    onClick = { onSelectGameMode(mode) }
+            Text(
+                text = "2048",
+                style = MaterialTheme.typography.displayMedium,
+                fontWeight = FontWeight.Bold,
+                color = accent
+            )
+            Row(
+                modifier = Modifier.padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                ScoreChip(label = "LEVEL", value = uiState.level)
+                ScoreChip(label = "BEST", value = uiState.game.best)
+            }
+            if (uiState.currentStreak >= 1) {
+                Text(
+                    text = "🔥 ${uiState.currentStreak}-day streak",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+            }
+            Text(
+                text = "CHOOSE HOW YOU WANT TO PLAY",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp,
+                color = accent,
+                modifier = Modifier.padding(top = 18.dp)
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                GameMode.entries.forEach { mode ->
+                    StartModeCard(
+                        mode = mode,
+                        selected = mode == uiState.gameMode,
+                        onClick = { onSelectGameMode(mode) }
+                    )
+                }
+            }
+            Spacer(modifier = Modifier.height(12.dp))
+            OrbitVariantWeb(diameter = orbitDiameter)
+            Spacer(modifier = Modifier.height(12.dp))
+            OutlinedButton(
+                onClick = onPlay,
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = accent),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "Play",
+                    color = accent,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    modifier = Modifier.padding(vertical = 6.dp)
                 )
             }
         }
-        Spacer(modifier = Modifier.height(28.dp))
-        OrbitVariantWeb()
-        Spacer(modifier = Modifier.height(24.dp))
-        OutlinedButton(
-            onClick = onPlay,
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = accent),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                text = "Play",
-                color = accent,
-                fontWeight = FontWeight.Bold,
-                fontSize = 18.sp,
-                modifier = Modifier.padding(vertical = 6.dp)
-            )
-        }
-        Spacer(modifier = Modifier.height(24.dp))
     }
 }
 
@@ -284,9 +289,10 @@ private fun distance3D(a: Vec3, b: Vec3): Float {
  *  also has Perlin-noise wobble and traveling "signal packets", dropped here for a lighter
  *  decorative version). Tuned deliberately dim/slow/soft-edged -- glowing orbs rather than
  *  flat dots, low alpha throughout, a lazy spin -- so it reads as something glimpsed in the
- *  background rather than a bright, busy diagram. */
+ *  background rather than a bright, busy diagram. [diameter] is caller-controlled (see
+ *  [StartScreen]) rather than fixed, so it can shrink to fit a shorter screen. */
 @Composable
-private fun OrbitVariantWeb(modifier: Modifier = Modifier) {
+private fun OrbitVariantWeb(modifier: Modifier = Modifier, diameter: Dp = 220.dp) {
     val accent = LocalPaletteColors.current.accent
     val transition = rememberInfiniteTransition(label = "web3d")
     val spin by transition.animateFloat(
@@ -304,7 +310,7 @@ private fun OrbitVariantWeb(modifier: Modifier = Modifier) {
         }
     }
 
-    Canvas(modifier = modifier.size(240.dp)) {
+    Canvas(modifier = modifier.size(diameter)) {
         val scale = size.minDimension * 0.42f
         val center = Offset(size.width / 2f, size.height / 2f)
         val spinRad = Math.toRadians(spin.toDouble())
