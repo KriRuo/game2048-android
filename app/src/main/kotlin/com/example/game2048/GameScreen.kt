@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
@@ -39,8 +40,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
@@ -56,6 +59,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
@@ -115,14 +119,22 @@ private enum class AppScreen { START, GAME }
 /** True entry point: owns which of [AppScreen]'s two screens is showing. Always launches on
  *  [AppScreen.START] -- Start is meant to be the app's actual front door every time it opens,
  *  not something only some launches see depending on board state, so there's no "resume
- *  straight to the board" special case here. Deciding this once per process (via [remember],
- *  not derived every recomposition) is also what makes Original vs. Extended a real up-front
- *  choice instead of something [Header]'s old in-game dialog let you silently flip mid-board
- *  -- see [StartScreen] and [GameScreen]'s Home button. */
+ *  straight to the board" special case here. Deciding this once per process (via
+ *  [rememberSaveable], not derived every recomposition) is also what makes Original vs.
+ *  Extended a real up-front choice instead of something [Header]'s old in-game dialog let you
+ *  silently flip mid-board -- see [StartScreen] and [GameScreen]'s Home button.
+ *
+ *  [rememberSaveable], not plain [remember]: this Activity isn't configured to handle
+ *  orientation changes itself (no `android:configChanges` in the manifest), so Android's
+ *  default behavior on rotation is to destroy and recreate it -- which tears down and rebuilds
+ *  the whole Compose tree. Plain `remember` state doesn't survive that and would silently reset
+ *  to START, bouncing the player out of a game in progress just by rotating the screen.
+ *  `rememberSaveable` persists across that recreation the same way `uiState` already does via
+ *  the ViewModel surviving it. */
 @Composable
 fun Game2048App(viewModel: GameViewModel = viewModel()) {
     val uiState by viewModel.uiState.collectAsState()
-    var screen by remember { mutableStateOf(AppScreen.START) }
+    var screen by rememberSaveable { mutableStateOf(AppScreen.START) }
 
     when (screen) {
         AppScreen.START -> StartScreen(
@@ -154,6 +166,11 @@ private fun StartScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            // The app draws edge-to-edge (enableEdgeToEdge() in MainActivity), so without this
+            // Play can end up sitting under -- or right against -- a gesture nav bar/cutout on
+            // devices where that inset is taller than the emulator's (reported on a Samsung).
+            // safeDrawing covers status bar, nav bar/gesture area, and display cutouts.
+            .windowInsetsPadding(WindowInsets.safeDrawing)
             .padding(horizontal = 28.dp, vertical = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
