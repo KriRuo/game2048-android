@@ -321,9 +321,15 @@ private fun BoardArea(uiState: GameUiState, viewModel: GameViewModel, modifier: 
                     activeJoker = uiState.activeJoker,
                     teleportsRemaining = uiState.teleportsRemaining,
                     swapsRemaining = uiState.swapsRemaining,
+                    bombsRemaining = uiState.bombsRemaining,
+                    doublesRemaining = uiState.doublesRemaining,
+                    rotatesRemaining = uiState.rotatesRemaining,
                     onUndo = viewModel::onUndo,
                     onStartTeleport = viewModel::onStartTeleport,
                     onStartSwap = viewModel::onStartSwap,
+                    onStartBomb = viewModel::onStartBomb,
+                    onStartDouble = viewModel::onStartDouble,
+                    onRotate = viewModel::onRotate,
                     modifier = Modifier.width(boardSize)
                 )
             }
@@ -650,7 +656,7 @@ private fun GameModeDialog(
                                 text = if (mode == GameMode.ORIGINAL) {
                                     "Classic rules: swipe to move, no Undo, no Jokers."
                                 } else {
-                                    "Adds Undo plus the Teleport and Swap Jokers."
+                                    "Adds Undo plus the Teleport, Swap, Rotate, Double, and Bomb Jokers."
                                 },
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
@@ -935,6 +941,8 @@ private fun JokerBanner(joker: Joker, hasPicked: Boolean, onCancel: () -> Unit, 
     val instruction = when (joker) {
         Joker.TELEPORT -> if (!hasPicked) "Tap a tile to teleport" else "Tap an empty cell to move it there"
         Joker.SWAP -> if (!hasPicked) "Tap a tile to swap" else "Tap another tile to swap with"
+        Joker.BOMB -> "Tap a tile to remove it"
+        Joker.DOUBLE -> "Tap a tile to double it"
     }
     Row(
         modifier = modifier
@@ -968,9 +976,15 @@ private fun JokerActionBar(
     activeJoker: Joker?,
     teleportsRemaining: Int,
     swapsRemaining: Int,
+    bombsRemaining: Int,
+    doublesRemaining: Int,
+    rotatesRemaining: Int,
     onUndo: () -> Unit,
     onStartTeleport: () -> Unit,
     onStartSwap: () -> Unit,
+    onStartBomb: () -> Unit,
+    onStartDouble: () -> Unit,
+    onRotate: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val palette = LocalPaletteColors.current
@@ -978,7 +992,7 @@ private fun JokerActionBar(
         modifier = modifier
             .clip(RoundedCornerShape(20.dp))
             .background(palette.surfaceChip)
-            .padding(horizontal = 20.dp, vertical = 12.dp),
+            .padding(horizontal = 10.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -1009,6 +1023,33 @@ private fun JokerActionBar(
             contentDescription = "Swap, $swapsRemaining left",
             onClick = onStartSwap
         )
+        JokerActionButton(
+            icon = "🔁",
+            enabled = rotatesRemaining > 0,
+            isActive = false,
+            remaining = rotatesRemaining,
+            max = MAX_ROTATES,
+            contentDescription = "Rotate board, $rotatesRemaining left",
+            onClick = onRotate
+        )
+        JokerActionButton(
+            icon = "✨",
+            enabled = doublesRemaining > 0,
+            isActive = activeJoker == Joker.DOUBLE,
+            remaining = doublesRemaining,
+            max = MAX_DOUBLES,
+            contentDescription = "Double, $doublesRemaining left",
+            onClick = onStartDouble
+        )
+        JokerActionButton(
+            icon = "💣",
+            enabled = bombsRemaining > 0,
+            isActive = activeJoker == Joker.BOMB,
+            remaining = bombsRemaining,
+            max = MAX_BOMBS,
+            contentDescription = "Bomb, $bombsRemaining left",
+            onClick = onStartBomb
+        )
     }
 }
 
@@ -1028,8 +1069,8 @@ private fun JokerActionButton(
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
             modifier = Modifier
-                .size(52.dp)
-                .clip(RoundedCornerShape(14.dp))
+                .size(44.dp)
+                .clip(RoundedCornerShape(12.dp))
                 .background(if (isActive) palette.accent.copy(alpha = 0.25f) else palette.emptyCell)
                 .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
                 .semantics { this.contentDescription = contentDescription },
@@ -1037,16 +1078,16 @@ private fun JokerActionButton(
         ) {
             Text(
                 text = icon,
-                fontSize = 22.sp,
+                fontSize = 19.sp,
                 modifier = Modifier.alpha(if (enabled) 1f else 0.35f)
             )
         }
-        Spacer(modifier = Modifier.height(5.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+        Spacer(modifier = Modifier.height(4.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             repeat(max) { i ->
                 Box(
                     modifier = Modifier
-                        .size(width = 10.dp, height = 3.dp)
+                        .size(width = 8.dp, height = 3.dp)
                         .clip(RoundedCornerShape(1.5.dp))
                         .background(if (i < remaining) palette.accent else palette.accent.copy(alpha = 0.2f))
                 )

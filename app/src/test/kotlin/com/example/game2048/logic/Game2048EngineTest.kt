@@ -289,4 +289,66 @@ class Game2048EngineTest {
         assertTrue(result.applied)
         assertFalse(result.state.isGameOver)
     }
+
+    @Test
+    fun `bombTile removes the tile with no score change and no spawn`() {
+        val state = GameState(tiles = listOf(Tile(1, 2, 0, 0), Tile(2, 4, 0, 1)), nextTileId = 3, score = 10)
+        val result = engine.bombTile(state, tileId = 1)
+
+        assertTrue(result.applied)
+        assertEquals(1, result.state.tiles.size)
+        assertNull(result.state.tiles.firstOrNull { it.id == 1 })
+        assertEquals(10, result.state.score)
+    }
+
+    @Test
+    fun `bombTile refuses an unknown tile id`() {
+        val state = GameState(tiles = listOf(Tile(1, 2, 0, 0)), nextTileId = 2)
+        val result = engine.bombTile(state, tileId = 99)
+        assertFalse(result.applied)
+        assertEquals(state, result.state)
+    }
+
+    @Test
+    fun `doubleTile doubles the value and scores like a merge`() {
+        val state = GameState(tiles = listOf(Tile(1, 4, 0, 0)), nextTileId = 2, score = 10, best = 10)
+        val result = engine.doubleTile(state, tileId = 1)
+
+        assertTrue(result.applied)
+        val doubled = result.state.tiles.first { it.id == 1 }
+        assertEquals(8, doubled.value)
+        assertEquals(0 to 0, doubled.row to doubled.col)
+        assertEquals(18, result.state.score)
+        assertEquals(18, result.state.best)
+    }
+
+    @Test
+    fun `doubleTile refuses an unknown tile id`() {
+        val state = GameState(tiles = listOf(Tile(1, 2, 0, 0)), nextTileId = 2)
+        val result = engine.doubleTile(state, tileId = 99)
+        assertFalse(result.applied)
+        assertEquals(state, result.state)
+    }
+
+    @Test
+    fun `rotateBoard turns every tile 90 degrees clockwise`() {
+        // Top-left corner should land in the top-right corner of a clockwise rotation.
+        val state = GameState(tiles = listOf(Tile(1, 2, 0, 0), Tile(2, 4, 3, 0)), nextTileId = 3)
+        val result = engine.rotateBoard(state)
+
+        assertTrue(result.applied)
+        val t1 = result.state.tiles.first { it.id == 1 }
+        val t2 = result.state.tiles.first { it.id == 2 }
+        assertEquals(0 to 3, t1.row to t1.col)
+        assertEquals(0 to 0, t2.row to t2.col)
+        assertEquals(2, result.movements.size)
+    }
+
+    @Test
+    fun `rotateBoard applied four times returns tiles to their original cells`() {
+        val state = GameState(tiles = listOf(Tile(1, 2, 1, 2), Tile(2, 4, 3, 0)), nextTileId = 3)
+        var current = state
+        repeat(4) { current = engine.rotateBoard(current).state }
+        assertEquals(state.tiles.map { it.row to it.col }.toSet(), current.tiles.map { it.row to it.col }.toSet())
+    }
 }

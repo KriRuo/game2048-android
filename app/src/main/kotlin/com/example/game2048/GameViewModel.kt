@@ -44,11 +44,14 @@ private const val KEY_TOTAL_MERGES = "total_merges"
  *  indicator under the Undo button. */
 const val MAX_UNDOS = 3
 
-/** Uses allowed per game for each Joker (see [GameUiState.teleportsRemaining]/[GameUiState.
- *  swapsRemaining]), reset to this on New Game -- same not-persisted-across-restart reasoning
- *  as [MAX_UNDOS]. Not private, for the same dash-indicator reason. */
+/** Uses allowed per game for each Joker (see [GameUiState.teleportsRemaining] and friends),
+ *  reset to this on New Game -- same not-persisted-across-restart reasoning as [MAX_UNDOS].
+ *  Not private, for the same dash-indicator reason. */
 const val MAX_TELEPORTS = 2
 const val MAX_SWAPS = 2
+const val MAX_BOMBS = 2
+const val MAX_DOUBLES = 2
+const val MAX_ROTATES = 2
 
 /**
  * Everything the UI needs to render one frame of the game, including enough detail about
@@ -95,19 +98,27 @@ data class GameUiState(
     val undoState: GameState? = null,
     /** Single-move undos left this game; resets to [MAX_UNDOS] on New Game. */
     val undosRemaining: Int = MAX_UNDOS,
-    /** Which ruleset is active -- see [GameMode]. ORIGINAL hides Undo and both Jokers from the
+    /** Which ruleset is active -- see [GameMode]. ORIGINAL hides Undo and all Jokers from the
      *  UI; switching doesn't touch the board in progress. */
     val gameMode: GameMode = GameMode.DEFAULT,
     /** The Joker currently being aimed (player tapped its button, hasn't tapped a target yet
-     *  or is midway through Swap's two-tile pick), or null when neither is active. */
+     *  or is midway through Swap's two-tile pick), or null when none is active. Rotate never
+     *  appears here -- it has no target, see [GameViewModel.onRotate]. */
     val activeJoker: Joker? = null,
     /** For [Joker.TELEPORT]: the tile picked to move. For [Joker.SWAP]: the first of the two
-     *  tiles picked. Null until the player has tapped a tile after activating a Joker. */
+     *  tiles picked. Unused (stays null) for [Joker.BOMB]/[Joker.DOUBLE], which complete on the
+     *  first tile tap. Null until the player has tapped a tile after activating a Joker. */
     val jokerFirstTileId: Int? = null,
     /** Teleport uses left this game; resets to [MAX_TELEPORTS] on New Game. */
     val teleportsRemaining: Int = MAX_TELEPORTS,
     /** Swap uses left this game; resets to [MAX_SWAPS] on New Game. */
     val swapsRemaining: Int = MAX_SWAPS,
+    /** Bomb uses left this game; resets to [MAX_BOMBS] on New Game. */
+    val bombsRemaining: Int = MAX_BOMBS,
+    /** Double uses left this game; resets to [MAX_DOUBLES] on New Game. */
+    val doublesRemaining: Int = MAX_DOUBLES,
+    /** Rotate uses left this game; resets to [MAX_ROTATES] on New Game. */
+    val rotatesRemaining: Int = MAX_ROTATES,
     /** Lifetime stats, never reset by New Game (see the "Your Stats" section of Customize). */
     val gamesPlayed: Int = 0,
     val highestTileEver: Int = 0,
@@ -272,6 +283,43 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = current.copy(activeJoker = Joker.SWAP, jokerFirstTileId = null)
     }
 
+    /** Activates the Bomb Joker: the next tile tap ([onJokerTileTapped]) removes it. No-ops in
+     *  [GameMode.ORIGINAL] or once the allowance is spent. */
+    fun onStartBomb() {
+        val current = _uiState.value
+        if (current.gameMode != GameMode.EXTENDED || current.bombsRemaining <= 0) return
+        _uiState.value = current.copy(activeJoker = Joker.BOMB, jokerFirstTileId = null)
+    }
+
+    /** Activates the Double Joker: the next tile tap ([onJokerTileTapped]) doubles its value.
+     *  No-ops in [GameMode.ORIGINAL] or once the allowance is spent. */
+    fun onStartDouble() {
+        val current = _uiState.value
+        if (current.gameMode != GameMode.EXTENDED || current.doublesRemaining <= 0) return
+        _uiState.value = current.copy(activeJoker = Joker.DOUBLE, jokerFirstTileId = null)
+    }
+
+    /** Rotates the board 90 degrees clockwise. Unlike the other Jokers this has no target to
+     *  pick, so it applies immediately rather than going through [onStartTeleport]'s activate-
+     *  then-tap flow. No-ops in [GameMode.ORIGINAL] or once the allowance is spent. */
+    fun onRotate() {
+        val current = _uiState.value
+        if (current.gameMode != GameMode.EXTENDED || current.rotatesRemaining <= 0) return
+        val result = engine.rotateBoard(current.game)
+        persist(result.state, includeBest = false)
+        _uiState.value = current.copy(
+            game = result.state,
+            lastMovements = result.movements,
+            lastMergedTileIds = emptySet(),
+            lastSpawnedTileIds = emptySet(),
+            previousTilesById = current.game.tiles.associateBy { it.id },
+            lastScoreGained = 0,
+            moveToken = current.moveToken + 1,
+            undoState = current.game,
+            rotatesRemaining = current.rotatesRemaining - 1
+        )
+    }
+
     /** Backs out of whichever Joker is active without spending its allowance. */
     fun onCancelJoker() {
         _uiState.value = _uiState.value.copy(activeJoker = null, jokerFirstTileId = null)
@@ -280,7 +328,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     /** Tap on a tile while a Joker is active. Teleport: (re-)picks the tile to move -- tapping
      *  a different tile before an empty cell just changes which one will move. Swap: picks the
      *  first tile, then completes as soon as a *different* tile is tapped as the second pick
-     *  (tapping the same tile again just re-picks it, so a mis-tap isn't a dead end). */
+     *  (tapping the same tile again just re-picks it, so a mis-tap isn't a dead end). Bomb and
+     *  Double have only one thing to pick, so they complete on this same tap. */
     fun onJokerTileTapped(tileId: Int) {
         val current = _uiState.value
         when (current.activeJoker) {
@@ -293,6 +342,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                     applySwap(first, tileId)
                 }
             }
+            Joker.BOMB -> applyBomb(tileId)
+            Joker.DOUBLE -> applyDouble(tileId)
             null -> Unit
         }
     }
@@ -343,6 +394,58 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             activeJoker = null,
             jokerFirstTileId = null,
             swapsRemaining = current.swapsRemaining - 1
+        )
+    }
+
+    private fun applyBomb(tileId: Int) {
+        val current = _uiState.value
+        val result = engine.bombTile(current.game, tileId)
+        if (!result.applied) return
+        persist(result.state, includeBest = false)
+        _uiState.value = current.copy(
+            game = result.state,
+            lastMovements = emptyList(),
+            lastMergedTileIds = emptySet(),
+            lastSpawnedTileIds = emptySet(),
+            previousTilesById = current.game.tiles.associateBy { it.id },
+            lastScoreGained = 0,
+            moveToken = current.moveToken + 1,
+            undoState = current.game,
+            activeJoker = null,
+            jokerFirstTileId = null,
+            bombsRemaining = current.bombsRemaining - 1
+        )
+    }
+
+    /** Scores exactly like [onSwipe] does for a merge -- tracks cumulativeScore/best/
+     *  highestTileEver off the gained value -- since doubling a tile is conceptually a merge
+     *  with no partner. */
+    private fun applyDouble(tileId: Int) {
+        val current = _uiState.value
+        val result = engine.doubleTile(current.game, tileId)
+        if (!result.applied) return
+        val gained = result.state.score - current.game.score
+        cumulativeScore += gained
+        val bestChanged = result.state.best > bestScore
+        if (bestChanged) bestScore = result.state.best
+        val highestTile = result.state.tiles.maxOfOrNull { it.value } ?: 0
+        if (highestTile > highestTileEver) highestTileEver = highestTile
+        persist(result.state, includeBest = bestChanged)
+        _uiState.value = current.copy(
+            game = result.state,
+            lastMovements = emptyList(),
+            lastMergedTileIds = emptySet(),
+            lastSpawnedTileIds = emptySet(),
+            previousTilesById = current.game.tiles.associateBy { it.id },
+            lastScoreGained = gained,
+            moveToken = current.moveToken + 1,
+            level = LevelTracker.levelForCumulativeScore(cumulativeScore),
+            levelProgress = LevelTracker.progressToNextLevel(cumulativeScore),
+            undoState = current.game,
+            activeJoker = null,
+            jokerFirstTileId = null,
+            doublesRemaining = current.doublesRemaining - 1,
+            highestTileEver = highestTileEver
         )
     }
 

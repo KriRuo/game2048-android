@@ -13,9 +13,11 @@ const val MEGA_BOARD_SIZE = 6
 
 enum class Direction { LEFT, RIGHT, UP, DOWN }
 
-/** The two "Joker" powerups available in [GameMode.EXTENDED], reached by tapping tiles/cells
- *  directly rather than swiping -- see [Game2048Engine.teleportTile]/[Game2048Engine.swapTiles]. */
-enum class Joker { TELEPORT, SWAP }
+/** The tap-to-target "Joker" powerups available in [GameMode.EXTENDED], reached by tapping
+ *  tiles/cells directly rather than swiping. [ROTATE] isn't here -- it has no target to pick,
+ *  it fires immediately on tap (see [com.example.game2048.GameViewModel.onRotate]). See
+ *  [Game2048Engine.teleportTile]/[swapTiles]/[bombTile]/[doubleTile]/[rotateBoard]. */
+enum class Joker { TELEPORT, SWAP, BOMB, DOUBLE }
 
 /** Which ruleset is active. ORIGINAL matches the classic 2048 -- swipe only, no Undo, no
  *  Jokers. EXTENDED is this app's enhanced version. Switching doesn't touch the board in
@@ -191,6 +193,47 @@ class Game2048Engine(private val random: Random = Random.Default) {
         )
         val newState = state.copy(tiles = newTiles, isGameOver = !canAnyMoveBeMade(newTiles, state.boardSize))
         return JokerResult(newState, applied = true, movements = movements)
+    }
+
+    /** Removes the given tile outright -- the Bomb Joker. Frees its cell with no score change
+     *  and no spawn; only ever reduces the board's tile count, so re-checking game-over exists
+     *  purely for symmetry with the other Jokers (it can only go from over to not-over here). */
+    fun bombTile(state: GameState, tileId: Int): JokerResult {
+        if (state.tiles.none { it.id == tileId }) return JokerResult(state, applied = false)
+        val newTiles = state.tiles.filterNot { it.id == tileId }
+        val newState = state.copy(tiles = newTiles, isGameOver = !canAnyMoveBeMade(newTiles, state.boardSize))
+        return JokerResult(newState, applied = true)
+    }
+
+    /** Doubles the given tile's value in place -- the Double Joker. Scored exactly like a
+     *  merge (the gained value is the tile's *new* value), since conceptually it's a merge
+     *  with no partner. No spawn. Re-checks game-over the same way [swapTiles] does: changing
+     *  one tile's value, like swapping two, can unlock a merge on an otherwise-full board. */
+    fun doubleTile(state: GameState, tileId: Int): JokerResult {
+        val tile = state.tiles.firstOrNull { it.id == tileId } ?: return JokerResult(state, applied = false)
+        val newValue = tile.value * 2
+        val newTiles = state.tiles.map { if (it.id == tileId) it.copy(value = newValue) else it }
+        val newState = state.copy(
+            tiles = newTiles,
+            score = state.score + newValue,
+            best = maxOf(state.best, state.score + newValue),
+            isGameOver = !canAnyMoveBeMade(newTiles, state.boardSize)
+        )
+        return JokerResult(newState, applied = true)
+    }
+
+    /** Rotates every tile's position 90 degrees clockwise -- the Rotate Joker. Pure relabeling
+     *  of the grid's axes (no merge, no spawn, no score change), and unlike the other Jokers it
+     *  needs no target: activating it applies immediately (see [com.example.game2048.
+     *  GameViewModel.onRotate]). Game-over is invariant under rotation -- [canAnyMoveBeMade]
+     *  already checks all four directions regardless of orientation -- so it's not re-checked. */
+    fun rotateBoard(state: GameState): JokerResult {
+        val size = state.boardSize
+        val newTiles = state.tiles.map { it.copy(row = it.col, col = size - 1 - it.row) }
+        val movements = state.tiles.map {
+            TileMovement(it.id, it.row, it.col, it.col, size - 1 - it.row, isConsumedByMerge = false)
+        }
+        return JokerResult(state.copy(tiles = newTiles), applied = true, movements = movements)
     }
 
     /** Adds one random tile (90% a 2, 10% a 4) into a random empty cell, if any exist. */
