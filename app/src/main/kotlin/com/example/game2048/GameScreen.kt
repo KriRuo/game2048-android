@@ -15,6 +15,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -62,7 +63,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -86,9 +88,11 @@ import com.example.game2048.logic.TilePalette
 import com.example.game2048.ui.theme.LocalIsDarkTheme
 import com.example.game2048.ui.theme.LocalPaletteColors
 import com.example.game2048.ui.theme.paletteColorsFor
+import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.sqrt
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -197,7 +201,7 @@ private fun StartScreen(
             }
         }
         Spacer(modifier = Modifier.weight(1f))
-        OrbitFlourish()
+        OrbitVariantWeb()
         Spacer(modifier = Modifier.height(24.dp))
         OutlinedButton(
             onClick = onPlay,
@@ -215,61 +219,109 @@ private fun StartScreen(
     }
 }
 
-/** Purely decorative -- three rings of light, each carrying one soft dot, drifting around a
- *  common center at their own independent speed and direction. Big and slow rather than tight
- *  and busy is the point: it should read as ambient motion behind the screen, not a spinner --
- *  nothing on [StartScreen] is ever actually loading. */
-@Composable
-private fun OrbitFlourish(modifier: Modifier = Modifier) {
-    val palette = LocalPaletteColors.current
-    val transition = rememberInfiniteTransition(label = "orbit")
-    val angleOuter by transition.animateFloat(
-        initialValue = 0f, targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(9000, easing = LinearEasing)),
-        label = "orbitOuter"
-    )
-    val angleMiddle by transition.animateFloat(
-        initialValue = 0f, targetValue = -360f,
-        animationSpec = infiniteRepeatable(tween(6500, easing = LinearEasing)),
-        label = "orbitMiddle"
-    )
-    val angleInner by transition.animateFloat(
-        initialValue = 0f, targetValue = 360f,
-        animationSpec = infiniteRepeatable(tween(4200, easing = LinearEasing)),
-        label = "orbitInner"
-    )
-
-    Box(modifier = modifier.size(220.dp), contentAlignment = Alignment.Center) {
-        OrbitRing(diameter = 200.dp, strokeAlpha = 0.07f, color = palette.accent)
-        OrbitRing(diameter = 140.dp, strokeAlpha = 0.07f, color = palette.accent)
-        OrbitRing(diameter = 80.dp, strokeAlpha = 0.07f, color = palette.accent)
-        OrbitDot(angleDegrees = angleOuter, radiusDp = 100.0, dotSize = 14.dp, alpha = 0.35f, color = palette.accent)
-        OrbitDot(angleDegrees = angleMiddle, radiusDp = 70.0, dotSize = 11.dp, alpha = 0.28f, color = palette.accent)
-        OrbitDot(angleDegrees = angleInner, radiusDp = 40.0, dotSize = 8.dp, alpha = 0.22f, color = palette.accent)
+/** A point in a shared, roughly unit-scale 3D space (before projection) -- used by
+ *  [OrbitVariantWeb], adapted from the perspective-projection technique in
+ *  github.com/jakubantalik/libraries.dev's thinking-orbs engine (its `makeProj`): a real
+ *  rotation of the whole point cloud around an axis each frame, not just a fixed visual tilt,
+ *  is what actually sells the 3D read. */
+private data class Vec3(val x: Float, val y: Float, val z: Float) {
+    fun rotateX(radians: Double): Vec3 {
+        val c = cos(radians).toFloat()
+        val s = sin(radians).toFloat()
+        return Vec3(x, y * c - z * s, y * s + z * c)
+    }
+    fun rotateY(radians: Double): Vec3 {
+        val c = cos(radians).toFloat()
+        val s = sin(radians).toFloat()
+        return Vec3(x * c + z * s, y, -x * s + z * c)
     }
 }
 
-@Composable
-private fun OrbitRing(diameter: Dp, strokeAlpha: Float, color: Color) {
-    Box(
-        modifier = Modifier
-            .size(diameter)
-            .clip(CircleShape)
-            .border(1.dp, color.copy(alpha = strokeAlpha), CircleShape)
-    )
+/** Perspective-projects a [Vec3] (coordinates roughly in [-1, 1]) to a 2D offset scaled by
+ *  [scale] px, plus a depth in [0, 1] where 1 = nearest the viewer -- for depth-based
+ *  size/alpha falloff, the same trick the reference engine uses. */
+private fun project3D(p: Vec3, scale: Float, focal: Float = 2.6f): Triple<Float, Float, Float> {
+    val factor = focal / (focal + p.z)
+    val depth = (1f - p.z) / 2f
+    return Triple(p.x * factor * scale, p.y * factor * scale, depth)
 }
 
-@Composable
-private fun OrbitDot(angleDegrees: Float, radiusDp: Double, dotSize: Dp, alpha: Float, color: Color) {
-    val radians = Math.toRadians(angleDegrees.toDouble())
-    Box(
-        modifier = Modifier
-            .offset(x = (radiusDp * cos(radians)).dp, y = (radiusDp * sin(radians)).dp)
-            .size(dotSize)
-            .clip(CircleShape)
-            .background(color.copy(alpha = alpha))
-    )
+private fun distance3D(a: Vec3, b: Vec3): Float {
+    val dx = a.x - b.x
+    val dy = a.y - b.y
+    val dz = a.z - b.z
+    return sqrt(dx * dx + dy * dy + dz * dz)
 }
+
+/** [StartScreen]'s flourish: nodes on a Fibonacci-lattice sphere, rotating in true 3D and
+ *  connected by lines when close enough -- a rotating constellation. Adapted from the "web"
+ *  mode of github.com/jakubantalik/libraries.dev's thinking-orbs engine (its 30-node version
+ *  also has Perlin-noise wobble and traveling "signal packets", dropped here for a lighter
+ *  decorative version). Tuned deliberately dim/slow/soft-edged -- glowing orbs rather than
+ *  flat dots, low alpha throughout, a lazy spin -- so it reads as something glimpsed in the
+ *  background rather than a bright, busy diagram. */
+@Composable
+private fun OrbitVariantWeb(modifier: Modifier = Modifier) {
+    val accent = LocalPaletteColors.current.accent
+    val transition = rememberInfiniteTransition(label = "web3d")
+    val spin by transition.animateFloat(
+        initialValue = 0f, targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(28000, easing = LinearEasing)), label = "webSpin"
+    )
+    val nodeCount = 28
+    val nodes = remember {
+        val goldenAngle = PI * (3.0 - sqrt(5.0))
+        (0 until nodeCount).map { i ->
+            val y = 1f - (i / (nodeCount - 1f)) * 2f
+            val radiusAtY = sqrt((1f - y * y).coerceAtLeast(0f))
+            val theta = goldenAngle * i
+            Vec3((cos(theta) * radiusAtY).toFloat(), y, (sin(theta) * radiusAtY).toFloat())
+        }
+    }
+
+    Canvas(modifier = modifier.size(240.dp)) {
+        val scale = size.minDimension * 0.42f
+        val center = Offset(size.width / 2f, size.height / 2f)
+        val spinRad = Math.toRadians(spin.toDouble())
+
+        val projected = nodes.map { n ->
+            val world = n.rotateY(spinRad)
+            val (px, py, depth) = project3D(world, scale)
+            Triple(center + Offset(px, py), depth, world)
+        }
+
+        val connectThreshold = 0.7f
+        for (i in nodes.indices) {
+            for (j in i + 1 until nodes.size) {
+                val d = distance3D(nodes[i], nodes[j])
+                if (d < connectThreshold) {
+                    val depthAvg = (projected[i].second + projected[j].second) / 2f
+                    val edgeAlpha = ((1f - d / connectThreshold) * (0.05f + 0.09f * depthAvg)).coerceIn(0f, 0.16f)
+                    drawLine(
+                        color = accent.copy(alpha = edgeAlpha),
+                        start = projected[i].first,
+                        end = projected[j].first,
+                        strokeWidth = 1.dp.toPx()
+                    )
+                }
+            }
+        }
+        projected.forEach { (pos, depth, _) ->
+            val glowAlpha = 0.10f + 0.22f * depth
+            val glowRadius = (5f + 5f * depth).dp.toPx()
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(accent.copy(alpha = glowAlpha), accent.copy(alpha = 0f)),
+                    center = pos,
+                    radius = glowRadius
+                ),
+                radius = glowRadius,
+                center = pos
+            )
+        }
+    }
+}
+
 
 /** One selectable mode option on [StartScreen]. */
 @Composable
