@@ -62,6 +62,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -196,6 +197,8 @@ private fun StartScreen(
             }
         }
         Spacer(modifier = Modifier.weight(1f))
+        OrbitFlourish()
+        Spacer(modifier = Modifier.height(24.dp))
         OutlinedButton(
             onClick = onPlay,
             shape = RoundedCornerShape(12.dp),
@@ -209,38 +212,63 @@ private fun StartScreen(
                 modifier = Modifier.padding(vertical = 6.dp)
             )
         }
-        Spacer(modifier = Modifier.height(20.dp))
-        OrbitFlourish()
     }
 }
 
-/** Purely decorative -- three dots endlessly circling a center point, sat under the Play
- *  button as a small bit of life on an otherwise static screen. Doesn't indicate loading;
- *  nothing on [StartScreen] is ever actually waiting on anything. */
+/** Purely decorative -- three rings of light, each carrying one soft dot, drifting around a
+ *  common center at their own independent speed and direction. Big and slow rather than tight
+ *  and busy is the point: it should read as ambient motion behind the screen, not a spinner --
+ *  nothing on [StartScreen] is ever actually loading. */
 @Composable
 private fun OrbitFlourish(modifier: Modifier = Modifier) {
     val palette = LocalPaletteColors.current
     val transition = rememberInfiniteTransition(label = "orbit")
-    val angleDegrees by transition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(animation = tween(2600, easing = LinearEasing)),
-        label = "orbitAngle"
+    val angleOuter by transition.animateFloat(
+        initialValue = 0f, targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(9000, easing = LinearEasing)),
+        label = "orbitOuter"
     )
-    val dotCount = 3
-    val radiusDp = 16.0
-    Box(modifier = modifier.size(56.dp), contentAlignment = Alignment.Center) {
-        for (i in 0 until dotCount) {
-            val radians = Math.toRadians((angleDegrees + i * (360f / dotCount)).toDouble())
-            Box(
-                modifier = Modifier
-                    .offset(x = (radiusDp * cos(radians)).dp, y = (radiusDp * sin(radians)).dp)
-                    .size(9.dp)
-                    .clip(CircleShape)
-                    .background(palette.accent.copy(alpha = 1f - i * 0.28f))
-            )
-        }
+    val angleMiddle by transition.animateFloat(
+        initialValue = 0f, targetValue = -360f,
+        animationSpec = infiniteRepeatable(tween(6500, easing = LinearEasing)),
+        label = "orbitMiddle"
+    )
+    val angleInner by transition.animateFloat(
+        initialValue = 0f, targetValue = 360f,
+        animationSpec = infiniteRepeatable(tween(4200, easing = LinearEasing)),
+        label = "orbitInner"
+    )
+
+    Box(modifier = modifier.size(220.dp), contentAlignment = Alignment.Center) {
+        OrbitRing(diameter = 200.dp, strokeAlpha = 0.07f, color = palette.accent)
+        OrbitRing(diameter = 140.dp, strokeAlpha = 0.07f, color = palette.accent)
+        OrbitRing(diameter = 80.dp, strokeAlpha = 0.07f, color = palette.accent)
+        OrbitDot(angleDegrees = angleOuter, radiusDp = 100.0, dotSize = 14.dp, alpha = 0.35f, color = palette.accent)
+        OrbitDot(angleDegrees = angleMiddle, radiusDp = 70.0, dotSize = 11.dp, alpha = 0.28f, color = palette.accent)
+        OrbitDot(angleDegrees = angleInner, radiusDp = 40.0, dotSize = 8.dp, alpha = 0.22f, color = palette.accent)
     }
+}
+
+@Composable
+private fun OrbitRing(diameter: Dp, strokeAlpha: Float, color: Color) {
+    Box(
+        modifier = Modifier
+            .size(diameter)
+            .clip(CircleShape)
+            .border(1.dp, color.copy(alpha = strokeAlpha), CircleShape)
+    )
+}
+
+@Composable
+private fun OrbitDot(angleDegrees: Float, radiusDp: Double, dotSize: Dp, alpha: Float, color: Color) {
+    val radians = Math.toRadians(angleDegrees.toDouble())
+    Box(
+        modifier = Modifier
+            .offset(x = (radiusDp * cos(radians)).dp, y = (radiusDp * sin(radians)).dp)
+            .size(dotSize)
+            .clip(CircleShape)
+            .background(color.copy(alpha = alpha))
+    )
 }
 
 /** One selectable mode option on [StartScreen]. */
