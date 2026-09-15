@@ -37,7 +37,6 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -61,7 +60,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.game2048.logic.BigBoardUnlock
+import com.example.game2048.logic.BoardSizeOption
+import com.example.game2048.logic.BoardSizeUnlocks
 import com.example.game2048.logic.Direction
 import com.example.game2048.logic.ThemeUnlocks
 import com.example.game2048.logic.Tile
@@ -111,10 +111,10 @@ fun GameScreen(viewModel: GameViewModel = viewModel()) {
                     level = uiState.level,
                     levelProgress = uiState.levelProgress,
                     selectedPalette = uiState.selectedPalette,
-                    bigBoardEnabled = uiState.bigBoardEnabled,
+                    selectedBoardSize = uiState.selectedBoardSize,
                     onNewGame = viewModel::onNewGame,
                     onSelectPalette = viewModel::onSelectPalette,
-                    onToggleBigBoard = viewModel::onToggleBigBoard,
+                    onSelectBoardSize = viewModel::onSelectBoardSize,
                     modifier = Modifier.padding(end = 24.dp)
                 )
                 BoardArea(uiState = uiState, viewModel = viewModel, modifier = Modifier.weight(1f).fillMaxHeight())
@@ -135,10 +135,10 @@ fun GameScreen(viewModel: GameViewModel = viewModel()) {
                     level = uiState.level,
                     levelProgress = uiState.levelProgress,
                     selectedPalette = uiState.selectedPalette,
-                    bigBoardEnabled = uiState.bigBoardEnabled,
+                    selectedBoardSize = uiState.selectedBoardSize,
                     onNewGame = viewModel::onNewGame,
                     onSelectPalette = viewModel::onSelectPalette,
-                    onToggleBigBoard = viewModel::onToggleBigBoard
+                    onSelectBoardSize = viewModel::onSelectBoardSize
                 )
                 BoardArea(
                     uiState = uiState,
@@ -228,11 +228,9 @@ private fun BoardArea(uiState: GameUiState, viewModel: GameViewModel, modifier: 
                             color = accent
                         )
                     }
-                    if (uiState.levelAtGameStart < BigBoardUnlock.UNLOCK_LEVEL &&
-                        uiState.level >= BigBoardUnlock.UNLOCK_LEVEL
-                    ) {
+                    BoardSizeUnlocks.newlyUnlocked(uiState.levelAtGameStart, uiState.level)?.let { unlocked ->
                         Text(
-                            text = "📐 Big Board unlocked! Turn it on from Customize.",
+                            text = "📐 ${unlocked.displayName} unlocked! Select it from Customize.",
                             modifier = Modifier.padding(top = 10.dp),
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
@@ -273,10 +271,10 @@ private fun Header(
     level: Int,
     levelProgress: Float,
     selectedPalette: TilePalette,
-    bigBoardEnabled: Boolean,
+    selectedBoardSize: BoardSizeOption,
     onNewGame: () -> Unit,
     onSelectPalette: (TilePalette) -> Unit,
-    onToggleBigBoard: (Boolean) -> Unit
+    onSelectBoardSize: (BoardSizeOption) -> Unit
 ) {
     val accent = LocalPaletteColors.current.accent
     var showThemePicker by remember { mutableStateOf(false) }
@@ -352,12 +350,12 @@ private fun Header(
         ThemePickerDialog(
             currentPalette = selectedPalette,
             level = level,
-            bigBoardEnabled = bigBoardEnabled,
+            selectedBoardSize = selectedBoardSize,
             onSelect = {
                 onSelectPalette(it)
                 showThemePicker = false
             },
-            onToggleBigBoard = onToggleBigBoard,
+            onSelectBoardSize = onSelectBoardSize,
             onDismiss = { showThemePicker = false }
         )
     }
@@ -376,10 +374,10 @@ private fun Sidebar(
     level: Int,
     levelProgress: Float,
     selectedPalette: TilePalette,
-    bigBoardEnabled: Boolean,
+    selectedBoardSize: BoardSizeOption,
     onNewGame: () -> Unit,
     onSelectPalette: (TilePalette) -> Unit,
-    onToggleBigBoard: (Boolean) -> Unit,
+    onSelectBoardSize: (BoardSizeOption) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val accent = LocalPaletteColors.current.accent
@@ -445,12 +443,12 @@ private fun Sidebar(
         ThemePickerDialog(
             currentPalette = selectedPalette,
             level = level,
-            bigBoardEnabled = bigBoardEnabled,
+            selectedBoardSize = selectedBoardSize,
             onSelect = {
                 onSelectPalette(it)
                 showThemePicker = false
             },
-            onToggleBigBoard = onToggleBigBoard,
+            onSelectBoardSize = onSelectBoardSize,
             onDismiss = { showThemePicker = false }
         )
     }
@@ -460,9 +458,9 @@ private fun Sidebar(
 private fun ThemePickerDialog(
     currentPalette: TilePalette,
     level: Int,
-    bigBoardEnabled: Boolean,
+    selectedBoardSize: BoardSizeOption,
     onSelect: (TilePalette) -> Unit,
-    onToggleBigBoard: (Boolean) -> Unit,
+    onSelectBoardSize: (BoardSizeOption) -> Unit,
     onDismiss: () -> Unit
 ) {
     val isDark = LocalIsDarkTheme.current
@@ -521,40 +519,76 @@ private fun ThemePickerDialog(
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))
+                Text(
+                    text = "Board size",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f),
+                    modifier = Modifier.padding(horizontal = 4.dp)
+                )
 
-                val bigBoardUnlocked = BigBoardUnlock.isUnlocked(level)
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 10.dp, horizontal = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "📐 Big Board (5×5)",
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (bigBoardUnlocked) {
-                                MaterialTheme.colorScheme.onBackground
-                            } else {
-                                MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
+                BoardSizeOption.entries.forEach { option ->
+                    val unlocked = BoardSizeUnlocks.isUnlocked(option, level)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .then(if (unlocked) Modifier.clickable { onSelectBoardSize(option) } else Modifier)
+                            .padding(vertical = 10.dp, horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(
+                                    LocalPaletteColors.current.accent.copy(alpha = if (unlocked) 0.18f else 0.08f)
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "${option.size}²",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (unlocked) {
+                                    LocalPaletteColors.current.accent
+                                } else {
+                                    LocalPaletteColors.current.accent.copy(alpha = 0.4f)
+                                }
+                            )
+                        }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = option.displayName,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (unlocked) {
+                                    MaterialTheme.colorScheme.onBackground
+                                } else {
+                                    MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
+                                }
+                            )
+                            if (!unlocked) {
+                                Text(
+                                    text = "🔒 Unlocks at Level ${option.unlockLevel}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
+                                )
+                            } else if (option != BoardSizeOption.CLASSIC) {
+                                Text(
+                                    text = "Applies on your next New Game",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
+                                )
                             }
-                        )
-                        Text(
-                            text = if (bigBoardUnlocked) {
-                                "More room to play. Applies on your next New Game."
-                            } else {
-                                "🔒 Unlocks at Level ${BigBoardUnlock.UNLOCK_LEVEL}"
-                            },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
-                        )
+                        }
+                        if (option == selectedBoardSize) {
+                            Text(
+                                text = "✓",
+                                color = LocalPaletteColors.current.accent,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
-                    Switch(
-                        checked = bigBoardEnabled,
-                        onCheckedChange = onToggleBigBoard,
-                        enabled = bigBoardUnlocked
-                    )
                 }
             }
         }

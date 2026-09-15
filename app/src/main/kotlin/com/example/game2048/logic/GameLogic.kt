@@ -5,8 +5,11 @@ import kotlin.random.Random
 /** Board side length. */
 const val BOARD_SIZE = 4
 
-/** Board side length for the optional "Big Board" mode (see [BigBoardUnlock]). */
+/** Board side length for the optional "Big Board" mode (see [BoardSizeOption]). */
 const val BIG_BOARD_SIZE = 5
+
+/** Board side length for the optional "Mega Board" mode (see [BoardSizeOption]). */
+const val MEGA_BOARD_SIZE = 6
 
 enum class Direction { LEFT, RIGHT, UP, DOWN }
 

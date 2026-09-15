@@ -203,4 +203,17 @@ class Game2048EngineTest {
         val spawned = result.tiles.first { it.id == fullFourByFour.size + 1 }
         assertTrue(spawned.row == BIG_BOARD_SIZE - 1 || spawned.col == BIG_BOARD_SIZE - 1)
     }
+
+    @Test
+    fun `Mega Board (6x6) plays with the same generic boardSize logic as 5x5`() {
+        val state = engine.newGame(boardSize = MEGA_BOARD_SIZE)
+        assertEquals(MEGA_BOARD_SIZE, state.boardSize)
+        assertTrue(state.tiles.all { it.row in 0 until MEGA_BOARD_SIZE && it.col in 0 until MEGA_BOARD_SIZE })
+
+        val slideState = GameState(tiles = listOf(Tile(1, 2, 3, 5)), nextTileId = 2, boardSize = MEGA_BOARD_SIZE)
+        val result = engine.move(slideState, Direction.LEFT)
+        assertTrue(result.moved)
+        val survivor = result.state.tiles.first { it.id == 1 }
+        assertEquals(3 to 0, survivor.row to survivor.col)
+    }
 }
