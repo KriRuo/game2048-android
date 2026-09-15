@@ -101,14 +101,17 @@ private const val COMBO_POPUP_LIFETIME_MS = 900L
 
 private enum class AppScreen { START, GAME }
 
-/** True entry point: owns which of [AppScreen]'s two screens is showing. Deciding this once
- *  per process (via [remember], not derived every recomposition) is what makes Original vs.
- *  Extended a real up-front choice instead of something [Header]'s old in-game dialog let you
- *  silently flip mid-board -- see [StartScreen] and [GameScreen]'s Home button. */
+/** True entry point: owns which of [AppScreen]'s two screens is showing. Always launches on
+ *  [AppScreen.START] -- Start is meant to be the app's actual front door every time it opens,
+ *  not something only some launches see depending on board state, so there's no "resume
+ *  straight to the board" special case here. Deciding this once per process (via [remember],
+ *  not derived every recomposition) is also what makes Original vs. Extended a real up-front
+ *  choice instead of something [Header]'s old in-game dialog let you silently flip mid-board
+ *  -- see [StartScreen] and [GameScreen]'s Home button. */
 @Composable
 fun Game2048App(viewModel: GameViewModel = viewModel()) {
     val uiState by viewModel.uiState.collectAsState()
-    var screen by remember { mutableStateOf(initialScreenFor(uiState)) }
+    var screen by remember { mutableStateOf(AppScreen.START) }
 
     when (screen) {
         AppScreen.START -> StartScreen(
@@ -125,13 +128,6 @@ fun Game2048App(viewModel: GameViewModel = viewModel()) {
         AppScreen.GAME -> GameScreen(viewModel = viewModel, onNavigateHome = { screen = AppScreen.START })
     }
 }
-
-/** Skips straight to the board only if there's a genuinely in-progress game to resume (real
- *  progress made, and not already over) -- a fresh/never-played or finished board sends the
- *  player to [StartScreen] first, so they always get a live chance to pick the mode rather
- *  than inheriting whatever it happened to be last. */
-private fun initialScreenFor(uiState: GameUiState): AppScreen =
-    if (uiState.game.score > 0 && !uiState.game.isGameOver) AppScreen.GAME else AppScreen.START
 
 /** Landing screen: pick Original or Extended, then Play. The only two ways back here are
  *  finishing a game (its overlay's button goes home, not straight into a new one) or tapping
