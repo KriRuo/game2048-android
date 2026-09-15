@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -37,6 +38,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -59,6 +62,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -354,13 +359,12 @@ private fun Header(
         }
     }
 
-    // FlowRow, not Row: on a narrower/denser real phone than tested on, three unweighted
-    // buttons can end up with less combined room than they need. A plain Row would either
-    // overflow past the screen edge or (as happened on a real Samsung, with "New Game" only)
-    // report almost no width to the last button, collapsing its Text into a vertical column of
-    // single characters. FlowRow instead wraps a whole button to a second line when it doesn't
-    // fit -- still readable, no per-letter collapse. maxLines = 1 below is the actual guarantee
-    // against that specific failure, belt-and-suspenders.
+    // Customize/Undo are icon-only (secondary actions); New Game keeps its full label as the
+    // primary action. Narrow enough that all three reliably fit one line even on a dense phone
+    // -- a real Samsung previously squeezed "New Game" so hard its Text wrapped letter-by-letter
+    // when all three were full-width buttons. FlowRow (wraps a whole button to a new line rather
+    // than letting an individual one collapse) and maxLines = 1 (hard guarantee against that
+    // specific failure) are kept as a safety net regardless.
     FlowRow(
         modifier = Modifier
             .fillMaxWidth()
@@ -371,17 +375,25 @@ private fun Header(
         OutlinedButton(
             onClick = { showThemePicker = true },
             shape = RoundedCornerShape(10.dp),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = accent)
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = accent),
+            contentPadding = PaddingValues(12.dp),
+            modifier = Modifier.semantics { contentDescription = "Customize" }
         ) {
-            Text("🎨 Customize", fontWeight = FontWeight.SemiBold, maxLines = 1)
+            Text("🎨", fontSize = 18.sp, maxLines = 1)
         }
-        OutlinedButton(
-            onClick = onUndo,
-            enabled = canUndo,
-            shape = RoundedCornerShape(10.dp),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = accent)
+        BadgedBox(
+            badge = { if (undosRemaining > 0) Badge { Text("$undosRemaining") } }
         ) {
-            Text("↩️ Undo ($undosRemaining)", fontWeight = FontWeight.SemiBold, maxLines = 1)
+            OutlinedButton(
+                onClick = onUndo,
+                enabled = canUndo,
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = accent),
+                contentPadding = PaddingValues(12.dp),
+                modifier = Modifier.semantics { contentDescription = "Undo, $undosRemaining left" }
+            ) {
+                Text("↩️", fontSize = 18.sp, maxLines = 1)
+            }
         }
         OutlinedButton(
             onClick = onNewGame,
