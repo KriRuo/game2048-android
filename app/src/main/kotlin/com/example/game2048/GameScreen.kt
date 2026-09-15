@@ -1697,8 +1697,11 @@ private fun GhostTile(
 
 private fun fontSizeFor(value: Int) = when {
     value < 100 -> 28.sp
-    value < 1000 -> 24.sp
-    else -> 19.sp
+    value < 1_000 -> 24.sp
+    value < 10_000 -> 19.sp
+    value < 100_000 -> 15.sp
+    value < 1_000_000 -> 12.sp
+    else -> 10.sp
 }
 
 @Composable

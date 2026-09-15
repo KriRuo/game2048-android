@@ -29,12 +29,16 @@ data class PaletteColors(
 // between light and dark (already saturated/dark enough to read on either background) -- mirrors
 // how the original Clay palette was structured.
 
+// 4096/8192 continue each ramp's existing trend rather than repeating 2048's color, so the
+// Giant Board (8x8, real enough room to actually get this far) doesn't flatten out early.
 private val clayUpper = mapOf(
     128 to ClaudeAccent,
     256 to Color(0xFFC8663F),
     512 to Color(0xFFB85A3E),
     1024 to Color(0xFFA34934),
-    2048 to Color(0xFF8C3A2B)
+    2048 to Color(0xFF8C3A2B),
+    4096 to Color(0xFF762F23),
+    8192 to Color(0xFF60251B)
 )
 
 private val meadowAccent = Color(0xFF6B8E4E)
@@ -43,7 +47,9 @@ private val meadowUpper = mapOf(
     256 to Color(0xFF5C7C41),
     512 to Color(0xFF4F7038),
     1024 to Color(0xFF3F5E2E),
-    2048 to Color(0xFF334C26)
+    2048 to Color(0xFF334C26),
+    4096 to Color(0xFF293D1E),
+    8192 to Color(0xFF1F2E16)
 )
 
 private val midnightAccent = Color(0xFF5B6EE8)
@@ -52,7 +58,9 @@ private val midnightUpper = mapOf(
     256 to Color(0xFF4C5AC9),
     512 to Color(0xFF3F49AA),
     1024 to Color(0xFF333B8C),
-    2048 to Color(0xFF272D6E)
+    2048 to Color(0xFF272D6E),
+    4096 to Color(0xFF1E2359),
+    8192 to Color(0xFF161A44)
 )
 
 private val berryAccent = Color(0xFFB8507E)
@@ -61,18 +69,23 @@ private val berryUpper = mapOf(
     256 to Color(0xFFA2456C),
     512 to Color(0xFF8E3B5D),
     1024 to Color(0xFF78314D),
-    2048 to Color(0xFF63273E)
+    2048 to Color(0xFF63273E),
+    4096 to Color(0xFF511F33),
+    8192 to Color(0xFF401828)
 )
 
 // Cyber breaks from the other four's single-hue ramp: it shifts from neon cyan up through
-// violet into hot magenta as tiles climb, rather than just deepening one color.
+// violet into hot magenta as tiles climb, then keeps rotating on into rose and orange-red
+// rather than just deepening one color.
 private val cyberAccent = Color(0xFF00D9C0)
 private val cyberUpper = mapOf(
     128 to cyberAccent,
     256 to Color(0xFF00B8D4),
     512 to Color(0xFF6A3FD9),
     1024 to Color(0xFFB026FF),
-    2048 to Color(0xFFFF2FB0)
+    2048 to Color(0xFFFF2FB0),
+    4096 to Color(0xFFFF3D6E),
+    8192 to Color(0xFFFF6B35)
 )
 
 private fun paletteColors(
