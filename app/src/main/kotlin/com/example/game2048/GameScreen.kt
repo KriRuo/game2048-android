@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -278,6 +279,7 @@ private fun BoardArea(uiState: GameUiState, viewModel: GameViewModel, modifier: 
     }
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 private fun Header(
     score: Int,
@@ -352,36 +354,41 @@ private fun Header(
         }
     }
 
-    Row(
+    // FlowRow, not Row: on a narrower/denser real phone than tested on, three unweighted
+    // buttons can end up with less combined room than they need. A plain Row would either
+    // overflow past the screen edge or (as happened on a real Samsung, with "New Game" only)
+    // report almost no width to the last button, collapsing its Text into a vertical column of
+    // single characters. FlowRow instead wraps a whole button to a second line when it doesn't
+    // fit -- still readable, no per-letter collapse. maxLines = 1 below is the actual guarantee
+    // against that specific failure, belt-and-suspenders.
+    FlowRow(
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 14.dp),
-        horizontalArrangement = Arrangement.End,
-        verticalAlignment = Alignment.CenterVertically
+        horizontalArrangement = Arrangement.spacedBy(10.dp, alignment = Alignment.End),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         OutlinedButton(
             onClick = { showThemePicker = true },
             shape = RoundedCornerShape(10.dp),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = accent)
         ) {
-            Text("🎨 Customize", fontWeight = FontWeight.SemiBold)
+            Text("🎨 Customize", fontWeight = FontWeight.SemiBold, maxLines = 1)
         }
-        Spacer(modifier = Modifier.width(10.dp))
         OutlinedButton(
             onClick = onUndo,
             enabled = canUndo,
             shape = RoundedCornerShape(10.dp),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = accent)
         ) {
-            Text("↩️ Undo ($undosRemaining)", fontWeight = FontWeight.SemiBold)
+            Text("↩️ Undo ($undosRemaining)", fontWeight = FontWeight.SemiBold, maxLines = 1)
         }
-        Spacer(modifier = Modifier.width(10.dp))
         OutlinedButton(
             onClick = onNewGame,
             shape = RoundedCornerShape(10.dp),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = accent)
         ) {
-            Text("New Game", fontWeight = FontWeight.SemiBold)
+            Text("New Game", fontWeight = FontWeight.SemiBold, maxLines = 1)
         }
     }
 
@@ -492,7 +499,7 @@ private fun Sidebar(
             colors = ButtonDefaults.outlinedButtonColors(contentColor = accent),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("🎨 Customize", fontWeight = FontWeight.SemiBold)
+            Text("🎨 Customize", fontWeight = FontWeight.SemiBold, maxLines = 1)
         }
         Spacer(modifier = Modifier.height(10.dp))
         OutlinedButton(
@@ -502,7 +509,7 @@ private fun Sidebar(
             colors = ButtonDefaults.outlinedButtonColors(contentColor = accent),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("↩️ Undo ($undosRemaining)", fontWeight = FontWeight.SemiBold)
+            Text("↩️ Undo ($undosRemaining)", fontWeight = FontWeight.SemiBold, maxLines = 1)
         }
         Spacer(modifier = Modifier.height(10.dp))
         OutlinedButton(
@@ -511,7 +518,7 @@ private fun Sidebar(
             colors = ButtonDefaults.outlinedButtonColors(contentColor = accent),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("New Game", fontWeight = FontWeight.SemiBold)
+            Text("New Game", fontWeight = FontWeight.SemiBold, maxLines = 1)
         }
     }
 
