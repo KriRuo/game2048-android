@@ -36,6 +36,16 @@ class ThemeUnlocksTest {
     }
 
     @Test
+    fun `Cyber is the last to unlock, at level 30`() {
+        assertFalse(ThemeUnlocks.isUnlocked(TilePalette.CYBER, 29))
+        assertTrue(ThemeUnlocks.isUnlocked(TilePalette.CYBER, 30))
+        assertEquals(
+            listOf(TilePalette.CLAY, TilePalette.MEADOW, TilePalette.MIDNIGHT, TilePalette.BERRY, TilePalette.CYBER),
+            ThemeUnlocks.unlockedPalettes(30)
+        )
+    }
+
+    @Test
     fun `newlyUnlocked reports a single threshold crossed`() {
         assertEquals(TilePalette.MEADOW, ThemeUnlocks.newlyUnlocked(before = 2, after = 3))
     }

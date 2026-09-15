@@ -115,6 +115,7 @@ fun GameScreen(viewModel: GameViewModel = viewModel()) {
                     onNewGame = viewModel::onNewGame,
                     onSelectPalette = viewModel::onSelectPalette,
                     onSelectBoardSize = viewModel::onSelectBoardSize,
+                    onDebugJumpToLevel30 = viewModel::onDebugJumpToLevel30,
                     modifier = Modifier.padding(end = 24.dp)
                 )
                 BoardArea(uiState = uiState, viewModel = viewModel, modifier = Modifier.weight(1f).fillMaxHeight())
@@ -138,7 +139,8 @@ fun GameScreen(viewModel: GameViewModel = viewModel()) {
                     selectedBoardSize = uiState.selectedBoardSize,
                     onNewGame = viewModel::onNewGame,
                     onSelectPalette = viewModel::onSelectPalette,
-                    onSelectBoardSize = viewModel::onSelectBoardSize
+                    onSelectBoardSize = viewModel::onSelectBoardSize,
+                    onDebugJumpToLevel30 = viewModel::onDebugJumpToLevel30
                 )
                 BoardArea(
                     uiState = uiState,
@@ -274,7 +276,8 @@ private fun Header(
     selectedBoardSize: BoardSizeOption,
     onNewGame: () -> Unit,
     onSelectPalette: (TilePalette) -> Unit,
-    onSelectBoardSize: (BoardSizeOption) -> Unit
+    onSelectBoardSize: (BoardSizeOption) -> Unit,
+    onDebugJumpToLevel30: () -> Unit
 ) {
     val accent = LocalPaletteColors.current.accent
     var showThemePicker by remember { mutableStateOf(false) }
@@ -317,7 +320,13 @@ private fun Header(
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            ScoreChip(label = "SCORE", value = score, scoreGainedThisMove = scoreGainedThisMove, moveToken = moveToken)
+            ScoreChip(
+                label = "SCORE",
+                value = score,
+                scoreGainedThisMove = scoreGainedThisMove,
+                moveToken = moveToken,
+                onSecretTap = onDebugJumpToLevel30
+            )
             ScoreChip(label = "BEST", value = best)
         }
     }
@@ -378,6 +387,7 @@ private fun Sidebar(
     onNewGame: () -> Unit,
     onSelectPalette: (TilePalette) -> Unit,
     onSelectBoardSize: (BoardSizeOption) -> Unit,
+    onDebugJumpToLevel30: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val accent = LocalPaletteColors.current.accent
@@ -415,7 +425,13 @@ private fun Sidebar(
         }
 
         Spacer(modifier = Modifier.height(24.dp))
-        ScoreChip(label = "SCORE", value = score, scoreGainedThisMove = scoreGainedThisMove, moveToken = moveToken)
+        ScoreChip(
+            label = "SCORE",
+            value = score,
+            scoreGainedThisMove = scoreGainedThisMove,
+            moveToken = moveToken,
+            onSecretTap = onDebugJumpToLevel30
+        )
         Spacer(modifier = Modifier.height(10.dp))
         ScoreChip(label = "BEST", value = best)
 
@@ -600,7 +616,10 @@ private fun ScoreChip(
     label: String,
     value: Int,
     scoreGainedThisMove: Int = 0,
-    moveToken: Long = -1
+    moveToken: Long = -1,
+    // Debug backdoor: 5 quick taps (within 2s of each other) jumps straight to Level 30.
+    // Only wired up on the SCORE chip, not BEST -- see the call sites.
+    onSecretTap: (() -> Unit)? = null
 ) {
     var poppedDelta by remember { mutableStateOf<Int?>(null) }
     LaunchedEffect(moveToken) {
@@ -616,7 +635,24 @@ private fun ScoreChip(
         }
     }
 
-    Box {
+    var tapCount by remember { mutableStateOf(0) }
+    var lastTapAtMs by remember { mutableStateOf(0L) }
+
+    Box(
+        modifier = if (onSecretTap != null) {
+            Modifier.clickable {
+                val now = System.currentTimeMillis()
+                tapCount = if (now - lastTapAtMs <= 2000L) tapCount + 1 else 1
+                lastTapAtMs = now
+                if (tapCount >= 5) {
+                    tapCount = 0
+                    onSecretTap()
+                }
+            }
+        } else {
+            Modifier
+        }
+    ) {
         val palette = LocalPaletteColors.current
         Column(
             modifier = Modifier

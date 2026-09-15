@@ -64,6 +64,17 @@ private val berryUpper = mapOf(
     2048 to Color(0xFF63273E)
 )
 
+// Cyber breaks from the other four's single-hue ramp: it shifts from neon cyan up through
+// violet into hot magenta as tiles climb, rather than just deepening one color.
+private val cyberAccent = Color(0xFF00D9C0)
+private val cyberUpper = mapOf(
+    128 to cyberAccent,
+    256 to Color(0xFF00B8D4),
+    512 to Color(0xFF6A3FD9),
+    1024 to Color(0xFFB026FF),
+    2048 to Color(0xFFFF2FB0)
+)
+
 private fun paletteColors(
     isDark: Boolean,
     background: Color,
@@ -198,6 +209,34 @@ fun paletteColorsFor(palette: TilePalette, isDark: Boolean): PaletteColors = whe
             ),
             upperRamp = berryUpper,
             rampFallback = Color(0xFF5A2540)
+        )
+    }
+
+    TilePalette.CYBER -> if (!isDark) {
+        paletteColors(
+            isDark = false,
+            background = Color(0xFFF2FAF9), boardFrame = Color(0xFFDCEEEC), emptyCell = Color(0xFFCDE6E3),
+            surfaceChip = Color(0xFFE6F5F3), textPrimary = Color(0xFF102422), textMuted = Color(0xFF6E8B87),
+            accent = cyberAccent,
+            lowerRamp = mapOf(
+                2 to Color(0xFFE8F6F5), 4 to Color(0xFFC9EDE8), 8 to Color(0xFF9FDFD6),
+                16 to Color(0xFF6ED0C2), 32 to Color(0xFF3FC2B0), 64 to Color(0xFF1EB39E)
+            ),
+            upperRamp = cyberUpper,
+            rampFallback = Color(0xFF0A3330)
+        )
+    } else {
+        paletteColors(
+            isDark = true,
+            background = Color(0xFF0A0F14), boardFrame = Color(0xFF121A21), emptyCell = Color(0xFF19232B),
+            surfaceChip = Color(0xFF141D24), textPrimary = Color(0xFFE4FFFB), textMuted = Color(0xFF7FA6A0),
+            accent = cyberAccent,
+            lowerRamp = mapOf(
+                2 to Color(0xFF14232A), 4 to Color(0xFF16333B), 8 to Color(0xFF16454F),
+                16 to Color(0xFF116B72), 32 to Color(0xFF0D8C8F), 64 to Color(0xFF00A99A)
+            ),
+            upperRamp = cyberUpper,
+            rampFallback = Color(0xFF3D0A6B)
         )
     }
 }

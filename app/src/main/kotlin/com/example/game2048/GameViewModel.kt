@@ -150,6 +150,24 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = current.copy(selectedBoardSize = option)
     }
 
+    /** Debug backdoor (tap the SCORE chip 5x quickly): jumps straight to Level 30, mainly so
+     *  Cyber (the level-30 theme) and Mega Board (level 15) don't require actually grinding
+     *  there. Sets cumulativeScore to whatever XP Level 30 requires rather than faking a
+     *  separate "level" field, so it stays consistent with everything else [LevelTracker]
+     *  derives from real cumulative score -- and never regresses a player already past it. */
+    fun onDebugJumpToLevel30() {
+        val target = LevelTracker.scoreRequiredForLevel(30)
+        if (cumulativeScore >= target) return
+        cumulativeScore = target
+        prefs.edit().putLong(KEY_CUMULATIVE_SCORE, cumulativeScore).commit()
+        val level = LevelTracker.levelForCumulativeScore(cumulativeScore)
+        _uiState.value = _uiState.value.copy(
+            level = level,
+            levelProgress = LevelTracker.progressToNextLevel(cumulativeScore),
+            levelAtGameStart = level
+        )
+    }
+
     /** Called when the player dismisses the "You Win" banner and wants to keep playing. */
     fun onContinuePastWin() {
         _uiState.value = _uiState.value.let { it.copy(game = it.game.copy(continuePastWin = true)) }

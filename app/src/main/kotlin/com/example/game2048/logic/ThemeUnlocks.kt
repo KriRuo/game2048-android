@@ -9,7 +9,8 @@ enum class TilePalette(val id: String, val displayName: String, val unlockLevel:
     CLAY("clay", "Clay", 1),
     MEADOW("meadow", "Meadow", 3),
     MIDNIGHT("midnight", "Midnight", 6),
-    BERRY("berry", "Berry", 10);
+    BERRY("berry", "Berry", 10),
+    CYBER("cyber", "Cyber", 30);
 
     companion object {
         val DEFAULT = CLAY
