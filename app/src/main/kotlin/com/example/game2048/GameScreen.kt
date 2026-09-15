@@ -14,6 +14,8 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -26,6 +28,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -112,10 +115,16 @@ fun GameScreen(viewModel: GameViewModel = viewModel()) {
                     levelProgress = uiState.levelProgress,
                     selectedPalette = uiState.selectedPalette,
                     selectedBoardSize = uiState.selectedBoardSize,
+                    canUndo = uiState.undoState != null && uiState.undosRemaining > 0,
+                    undosRemaining = uiState.undosRemaining,
+                    gamesPlayed = uiState.gamesPlayed,
+                    highestTileEver = uiState.highestTileEver,
+                    totalMerges = uiState.totalMerges,
                     onNewGame = viewModel::onNewGame,
                     onSelectPalette = viewModel::onSelectPalette,
                     onSelectBoardSize = viewModel::onSelectBoardSize,
                     onDebugJumpToLevel30 = viewModel::onDebugJumpToLevel30,
+                    onUndo = viewModel::onUndo,
                     modifier = Modifier.padding(end = 24.dp)
                 )
                 BoardArea(uiState = uiState, viewModel = viewModel, modifier = Modifier.weight(1f).fillMaxHeight())
@@ -137,10 +146,16 @@ fun GameScreen(viewModel: GameViewModel = viewModel()) {
                     levelProgress = uiState.levelProgress,
                     selectedPalette = uiState.selectedPalette,
                     selectedBoardSize = uiState.selectedBoardSize,
+                    canUndo = uiState.undoState != null && uiState.undosRemaining > 0,
+                    undosRemaining = uiState.undosRemaining,
+                    gamesPlayed = uiState.gamesPlayed,
+                    highestTileEver = uiState.highestTileEver,
+                    totalMerges = uiState.totalMerges,
                     onNewGame = viewModel::onNewGame,
                     onSelectPalette = viewModel::onSelectPalette,
                     onSelectBoardSize = viewModel::onSelectBoardSize,
-                    onDebugJumpToLevel30 = viewModel::onDebugJumpToLevel30
+                    onDebugJumpToLevel30 = viewModel::onDebugJumpToLevel30,
+                    onUndo = viewModel::onUndo
                 )
                 BoardArea(
                     uiState = uiState,
@@ -274,10 +289,16 @@ private fun Header(
     levelProgress: Float,
     selectedPalette: TilePalette,
     selectedBoardSize: BoardSizeOption,
+    canUndo: Boolean,
+    undosRemaining: Int,
+    gamesPlayed: Int,
+    highestTileEver: Int,
+    totalMerges: Long,
     onNewGame: () -> Unit,
     onSelectPalette: (TilePalette) -> Unit,
     onSelectBoardSize: (BoardSizeOption) -> Unit,
-    onDebugJumpToLevel30: () -> Unit
+    onDebugJumpToLevel30: () -> Unit,
+    onUndo: () -> Unit
 ) {
     val accent = LocalPaletteColors.current.accent
     var showThemePicker by remember { mutableStateOf(false) }
@@ -347,6 +368,15 @@ private fun Header(
         }
         Spacer(modifier = Modifier.width(10.dp))
         OutlinedButton(
+            onClick = onUndo,
+            enabled = canUndo,
+            shape = RoundedCornerShape(10.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = accent)
+        ) {
+            Text("↩️ Undo ($undosRemaining)", fontWeight = FontWeight.SemiBold)
+        }
+        Spacer(modifier = Modifier.width(10.dp))
+        OutlinedButton(
             onClick = onNewGame,
             shape = RoundedCornerShape(10.dp),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = accent)
@@ -360,6 +390,9 @@ private fun Header(
             currentPalette = selectedPalette,
             level = level,
             selectedBoardSize = selectedBoardSize,
+            gamesPlayed = gamesPlayed,
+            highestTileEver = highestTileEver,
+            totalMerges = totalMerges,
             onSelect = {
                 onSelectPalette(it)
                 showThemePicker = false
@@ -384,16 +417,33 @@ private fun Sidebar(
     levelProgress: Float,
     selectedPalette: TilePalette,
     selectedBoardSize: BoardSizeOption,
+    canUndo: Boolean,
+    undosRemaining: Int,
+    gamesPlayed: Int,
+    highestTileEver: Int,
+    totalMerges: Long,
     onNewGame: () -> Unit,
     onSelectPalette: (TilePalette) -> Unit,
     onSelectBoardSize: (BoardSizeOption) -> Unit,
     onDebugJumpToLevel30: () -> Unit,
+    onUndo: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val accent = LocalPaletteColors.current.accent
     var showThemePicker by remember { mutableStateOf(false) }
 
-    Column(modifier = modifier.width(150.dp)) {
+    // fillMaxHeight + verticalScroll: three buttons plus the wordmark/level/streak/scores no
+    // longer reliably fit a short landscape screen's height (the row that added Undo was the
+    // first to actually overflow it) -- unlike a Row, Column content that's taller than its
+    // parent isn't clipped or scrollable by default, it just silently renders past the bottom
+    // of the screen. Scrolling keeps every button reachable instead of losing the last one off
+    // the edge on shorter devices.
+    Column(
+        modifier = modifier
+            .width(150.dp)
+            .fillMaxHeight()
+            .verticalScroll(rememberScrollState())
+    ) {
         Text(
             text = "2048",
             style = MaterialTheme.typography.headlineMedium,
@@ -446,6 +496,16 @@ private fun Sidebar(
         }
         Spacer(modifier = Modifier.height(10.dp))
         OutlinedButton(
+            onClick = onUndo,
+            enabled = canUndo,
+            shape = RoundedCornerShape(10.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = accent),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("↩️ Undo ($undosRemaining)", fontWeight = FontWeight.SemiBold)
+        }
+        Spacer(modifier = Modifier.height(10.dp))
+        OutlinedButton(
             onClick = onNewGame,
             shape = RoundedCornerShape(10.dp),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = accent),
@@ -460,6 +520,9 @@ private fun Sidebar(
             currentPalette = selectedPalette,
             level = level,
             selectedBoardSize = selectedBoardSize,
+            gamesPlayed = gamesPlayed,
+            highestTileEver = highestTileEver,
+            totalMerges = totalMerges,
             onSelect = {
                 onSelectPalette(it)
                 showThemePicker = false
@@ -475,6 +538,9 @@ private fun ThemePickerDialog(
     currentPalette: TilePalette,
     level: Int,
     selectedBoardSize: BoardSizeOption,
+    gamesPlayed: Int,
+    highestTileEver: Int,
+    totalMerges: Long,
     onSelect: (TilePalette) -> Unit,
     onSelectBoardSize: (BoardSizeOption) -> Unit,
     onDismiss: () -> Unit
@@ -487,7 +553,12 @@ private fun ThemePickerDialog(
         },
         title = { Text("Customize") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
                 TilePalette.entries.forEach { palette ->
                     val unlocked = ThemeUnlocks.isUnlocked(palette, level)
                     val swatchColor = paletteColorsFor(palette, isDark).accent
@@ -606,9 +677,38 @@ private fun ThemePickerDialog(
                         }
                     }
                 }
+
+                Spacer(modifier = Modifier.height(14.dp))
+                Text(
+                    text = "Your stats",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.55f),
+                    modifier = Modifier.padding(horizontal = 4.dp)
+                )
+                StatRow("🎮 Games played", gamesPlayed.toString())
+                StatRow("🏆 Highest tile", highestTileEver.toString())
+                StatRow("🔗 Total merges", totalMerges.toString())
             }
         }
     )
+}
+
+/** One row in the "Your stats" section of [ThemePickerDialog]. */
+@Composable
+private fun StatRow(label: String, value: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 6.dp, horizontal = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(text = label, color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f))
+        Text(
+            text = value,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+    }
 }
 
 @Composable
