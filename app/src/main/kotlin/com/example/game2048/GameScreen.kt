@@ -162,19 +162,25 @@ private fun StartScreen(
     onPlay: () -> Unit
 ) {
     val accent = LocalPaletteColors.current.accent
+    // verticalScroll, not the weight(1f)-spacer centering this used before: with a fixed-size
+    // 220dp flourish plus title/chips/heading/two mode cards, this content doesn't reliably fit
+    // a shorter screen or a larger system font scale -- and unlike a Row, Column content taller
+    // than its parent isn't clipped or scrollable by default, it just silently renders past (or
+    // straight through) the bottom edge, which is exactly what made Play unreadable on a real
+    // Samsung. Same failure mode, same fix, as [Sidebar]'s own verticalScroll below.
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             // The app draws edge-to-edge (enableEdgeToEdge() in MainActivity), so without this
             // Play can end up sitting under -- or right against -- a gesture nav bar/cutout on
-            // devices where that inset is taller than the emulator's (reported on a Samsung).
-            // safeDrawing covers status bar, nav bar/gesture area, and display cutouts.
+            // devices where that inset is taller than the emulator's.
             .windowInsetsPadding(WindowInsets.safeDrawing)
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 28.dp, vertical = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Spacer(modifier = Modifier.weight(1f))
+        Spacer(modifier = Modifier.height(24.dp))
         Text(
             text = "2048",
             style = MaterialTheme.typography.displayMedium,
@@ -217,7 +223,7 @@ private fun StartScreen(
                 )
             }
         }
-        Spacer(modifier = Modifier.weight(1f))
+        Spacer(modifier = Modifier.height(28.dp))
         OrbitVariantWeb()
         Spacer(modifier = Modifier.height(24.dp))
         OutlinedButton(
@@ -228,11 +234,13 @@ private fun StartScreen(
         ) {
             Text(
                 text = "Play",
+                color = accent,
                 fontWeight = FontWeight.Bold,
                 fontSize = 18.sp,
                 modifier = Modifier.padding(vertical = 6.dp)
             )
         }
+        Spacer(modifier = Modifier.height(24.dp))
     }
 }
 
