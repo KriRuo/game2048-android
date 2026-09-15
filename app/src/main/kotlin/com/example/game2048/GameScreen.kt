@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.rememberScrollState
@@ -38,8 +39,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -57,6 +56,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -72,6 +72,8 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.game2048.logic.BoardSizeOption
 import com.example.game2048.logic.BoardSizeUnlocks
 import com.example.game2048.logic.Direction
+import com.example.game2048.logic.GameMode
+import com.example.game2048.logic.Joker
 import com.example.game2048.logic.ThemeUnlocks
 import com.example.game2048.logic.Tile
 import com.example.game2048.logic.TileMovement
@@ -90,6 +92,11 @@ private const val SLIDE_DURATION_MS = 140
 private const val MERGE_POP_UP_MS = 90
 private const val MERGE_POP_DOWN_MS = 110
 private const val SCORE_POPUP_LIFETIME_MS = 700L
+
+/** Vertical space [BoardArea] reserves below the square board for [JokerActionBar] (its own
+ *  height plus the gap above it) so the board shrinks to make room rather than the bar
+ *  overflowing or overlapping it. */
+private val JOKER_BAR_RESERVED_HEIGHT = 96.dp
 private const val COMBO_POPUP_LIFETIME_MS = 900L
 
 @Composable
@@ -121,16 +128,15 @@ fun GameScreen(viewModel: GameViewModel = viewModel()) {
                     levelProgress = uiState.levelProgress,
                     selectedPalette = uiState.selectedPalette,
                     selectedBoardSize = uiState.selectedBoardSize,
-                    canUndo = uiState.undoState != null && uiState.undosRemaining > 0,
-                    undosRemaining = uiState.undosRemaining,
+                    gameMode = uiState.gameMode,
                     gamesPlayed = uiState.gamesPlayed,
                     highestTileEver = uiState.highestTileEver,
                     totalMerges = uiState.totalMerges,
                     onNewGame = viewModel::onNewGame,
                     onSelectPalette = viewModel::onSelectPalette,
                     onSelectBoardSize = viewModel::onSelectBoardSize,
+                    onSelectGameMode = viewModel::onSelectGameMode,
                     onDebugJumpToLevel30 = viewModel::onDebugJumpToLevel30,
-                    onUndo = viewModel::onUndo,
                     modifier = Modifier.padding(end = 24.dp)
                 )
                 BoardArea(uiState = uiState, viewModel = viewModel, modifier = Modifier.weight(1f).fillMaxHeight())
@@ -152,16 +158,15 @@ fun GameScreen(viewModel: GameViewModel = viewModel()) {
                     levelProgress = uiState.levelProgress,
                     selectedPalette = uiState.selectedPalette,
                     selectedBoardSize = uiState.selectedBoardSize,
-                    canUndo = uiState.undoState != null && uiState.undosRemaining > 0,
-                    undosRemaining = uiState.undosRemaining,
+                    gameMode = uiState.gameMode,
                     gamesPlayed = uiState.gamesPlayed,
                     highestTileEver = uiState.highestTileEver,
                     totalMerges = uiState.totalMerges,
                     onNewGame = viewModel::onNewGame,
                     onSelectPalette = viewModel::onSelectPalette,
                     onSelectBoardSize = viewModel::onSelectBoardSize,
-                    onDebugJumpToLevel30 = viewModel::onDebugJumpToLevel30,
-                    onUndo = viewModel::onUndo
+                    onSelectGameMode = viewModel::onSelectGameMode,
+                    onDebugJumpToLevel30 = viewModel::onDebugJumpToLevel30
                 )
                 BoardArea(
                     uiState = uiState,
@@ -182,104 +187,146 @@ fun GameScreen(viewModel: GameViewModel = viewModel()) {
  *  (landscape) or the width (portrait) as the constraining dimension. */
 @Composable
 private fun BoardArea(uiState: GameUiState, viewModel: GameViewModel, modifier: Modifier = Modifier) {
+    // Extended mode reserves a strip below the board for the Joker action bar; Original mode
+    // (no bar) lets the board claim the full square again.
+    val showJokerBar = uiState.gameMode == GameMode.EXTENDED
     BoxWithConstraints(modifier = modifier) {
-        Box(modifier = Modifier.size(minOf(maxWidth, maxHeight)).align(Alignment.TopCenter)) {
-            Board(
-                boardSize = uiState.game.boardSize,
-                tiles = uiState.game.tiles,
-                previousTilesById = uiState.previousTilesById,
-                movements = uiState.lastMovements,
-                mergedTileIds = uiState.lastMergedTileIds,
-                spawnedTileIds = uiState.lastSpawnedTileIds,
-                moveToken = uiState.moveToken,
-                invalidMoveToken = uiState.invalidMoveToken,
-                onSwipe = viewModel::onSwipe
-            )
+        val reservedForBar = if (showJokerBar) JOKER_BAR_RESERVED_HEIGHT else 0.dp
+        val boardSize = minOf(maxWidth, (maxHeight - reservedForBar).coerceAtLeast(0.dp))
+        Column(
+            modifier = Modifier.align(Alignment.TopCenter),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(modifier = Modifier.size(boardSize)) {
+                Board(
+                    boardSize = uiState.game.boardSize,
+                    tiles = uiState.game.tiles,
+                    previousTilesById = uiState.previousTilesById,
+                    movements = uiState.lastMovements,
+                    mergedTileIds = uiState.lastMergedTileIds,
+                    spawnedTileIds = uiState.lastSpawnedTileIds,
+                    moveToken = uiState.moveToken,
+                    invalidMoveToken = uiState.invalidMoveToken,
+                    // Swiping while a Joker is being aimed would both move the board out from
+                    // under the player's pick and silently waste the gesture -- disabled instead
+                    // so the only way off a Joker is finishing the pick or Cancel.
+                    onSwipe = if (uiState.activeJoker == null) viewModel::onSwipe else { _ -> },
+                    activeJoker = uiState.activeJoker,
+                    jokerFirstTileId = uiState.jokerFirstTileId,
+                    onJokerTileTap = viewModel::onJokerTileTapped,
+                    onJokerCellTap = viewModel::onJokerCellTapped
+                )
 
-            ComboPopup(
-                comboCount = uiState.lastMergedTileIds.size,
-                moveToken = uiState.moveToken,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 20.dp)
-            )
-
-            androidx.compose.animation.AnimatedVisibility(
-                visible = uiState.game.isGameOver,
-                enter = fadeIn(tween(220)) + scaleIn(initialScale = 0.9f, animationSpec = tween(220)),
-                exit = fadeOut(tween(120))
-            ) {
-                GameOverlay(
-                    title = "Game Over",
-                    buttonLabel = "Continue Your Journey",
-                    onButtonClick = viewModel::onNewGame
-                ) {
-                    val accent = LocalPaletteColors.current.accent
-                    Spacer(modifier = Modifier.height(14.dp))
-                    Text(
-                        text = "Level ${uiState.level}",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = accent
-                    )
-                    LinearProgressIndicator(
-                        progress = { uiState.levelProgress },
+                if (uiState.activeJoker != null) {
+                    JokerBanner(
+                        joker = uiState.activeJoker,
+                        hasPicked = uiState.jokerFirstTileId != null,
+                        onCancel = viewModel::onCancelJoker,
                         modifier = Modifier
-                            .padding(top = 10.dp)
-                            .width(160.dp)
-                            .height(6.dp)
-                            .clip(RoundedCornerShape(3.dp)),
-                        color = accent,
-                        trackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.15f),
-                        drawStopIndicator = {}
+                            .align(Alignment.TopCenter)
+                            .padding(top = 20.dp)
                     )
-                    if (uiState.level > uiState.levelAtGameStart) {
+                }
+
+                ComboPopup(
+                    comboCount = uiState.lastMergedTileIds.size,
+                    moveToken = uiState.moveToken,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 20.dp)
+                )
+
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = uiState.game.isGameOver,
+                    enter = fadeIn(tween(220)) + scaleIn(initialScale = 0.9f, animationSpec = tween(220)),
+                    exit = fadeOut(tween(120))
+                ) {
+                    GameOverlay(
+                        title = "Game Over",
+                        buttonLabel = "Continue Your Journey",
+                        onButtonClick = viewModel::onNewGame
+                    ) {
+                        val accent = LocalPaletteColors.current.accent
+                        Spacer(modifier = Modifier.height(14.dp))
                         Text(
-                            text = "🎉 Leveled up!",
-                            modifier = Modifier.padding(top = 10.dp),
-                            style = MaterialTheme.typography.titleMedium,
+                            text = "Level ${uiState.level}",
+                            style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = accent
                         )
-                    }
-                    ThemeUnlocks.newlyUnlocked(uiState.levelAtGameStart, uiState.level)?.let { unlocked ->
-                        Text(
-                            text = "🎨 New theme unlocked: ${unlocked.displayName}!",
-                            modifier = Modifier.padding(top = 10.dp),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = accent
+                        LinearProgressIndicator(
+                            progress = { uiState.levelProgress },
+                            modifier = Modifier
+                                .padding(top = 10.dp)
+                                .width(160.dp)
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp)),
+                            color = accent,
+                            trackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.15f),
+                            drawStopIndicator = {}
                         )
-                    }
-                    BoardSizeUnlocks.newlyUnlocked(uiState.levelAtGameStart, uiState.level)?.let { unlocked ->
-                        Text(
-                            text = "📐 ${unlocked.displayName} unlocked! Select it from Customize.",
-                            modifier = Modifier.padding(top = 10.dp),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = accent
-                        )
+                        if (uiState.level > uiState.levelAtGameStart) {
+                            Text(
+                                text = "🎉 Leveled up!",
+                                modifier = Modifier.padding(top = 10.dp),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = accent
+                            )
+                        }
+                        ThemeUnlocks.newlyUnlocked(uiState.levelAtGameStart, uiState.level)?.let { unlocked ->
+                            Text(
+                                text = "🎨 New theme unlocked: ${unlocked.displayName}!",
+                                modifier = Modifier.padding(top = 10.dp),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = accent
+                            )
+                        }
+                        BoardSizeUnlocks.newlyUnlocked(uiState.levelAtGameStart, uiState.level)?.let { unlocked ->
+                            Text(
+                                text = "📐 ${unlocked.displayName} unlocked! Select it from Customize.",
+                                modifier = Modifier.padding(top = 10.dp),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = accent
+                            )
+                        }
                     }
                 }
-            }
-            androidx.compose.animation.AnimatedVisibility(
-                // Not when the game is also over: both overlays would stack and render on top
-                // of each other, and "Keep Going" would be a lie -- there are no moves left.
-                visible = uiState.game.hasWon && !uiState.game.continuePastWin && !uiState.game.isGameOver,
-                enter = fadeIn(tween(220)) + scaleIn(initialScale = 0.9f, animationSpec = tween(220)),
-                exit = fadeOut(tween(120))
-            ) {
-                GameOverlay(
-                    title = "You made 2048!",
-                    buttonLabel = "Keep Going",
-                    onButtonClick = viewModel::onContinuePastWin
+                androidx.compose.animation.AnimatedVisibility(
+                    // Not when the game is also over: both overlays would stack and render on
+                    // top of each other, and "Keep Going" would be a lie -- there are no moves left.
+                    visible = uiState.game.hasWon && !uiState.game.continuePastWin && !uiState.game.isGameOver,
+                    enter = fadeIn(tween(220)) + scaleIn(initialScale = 0.9f, animationSpec = tween(220)),
+                    exit = fadeOut(tween(120))
+                ) {
+                    GameOverlay(
+                        title = "You made 2048!",
+                        buttonLabel = "Keep Going",
+                        onButtonClick = viewModel::onContinuePastWin
+                    )
+                }
+
+                StreakMilestoneBanner(
+                    milestone = uiState.justReachedMilestone,
+                    onShown = viewModel::onMilestoneBannerShown
                 )
             }
-
-            StreakMilestoneBanner(
-                milestone = uiState.justReachedMilestone,
-                onShown = viewModel::onMilestoneBannerShown
-            )
+            if (showJokerBar) {
+                Spacer(modifier = Modifier.height(12.dp))
+                JokerActionBar(
+                    canUndo = uiState.undoState != null && uiState.undosRemaining > 0,
+                    undosRemaining = uiState.undosRemaining,
+                    activeJoker = uiState.activeJoker,
+                    teleportsRemaining = uiState.teleportsRemaining,
+                    swapsRemaining = uiState.swapsRemaining,
+                    onUndo = viewModel::onUndo,
+                    onStartTeleport = viewModel::onStartTeleport,
+                    onStartSwap = viewModel::onStartSwap,
+                    modifier = Modifier.width(boardSize)
+                )
+            }
         }
     }
 }
@@ -296,54 +343,67 @@ private fun Header(
     levelProgress: Float,
     selectedPalette: TilePalette,
     selectedBoardSize: BoardSizeOption,
-    canUndo: Boolean,
-    undosRemaining: Int,
+    gameMode: GameMode,
     gamesPlayed: Int,
     highestTileEver: Int,
     totalMerges: Long,
     onNewGame: () -> Unit,
     onSelectPalette: (TilePalette) -> Unit,
     onSelectBoardSize: (BoardSizeOption) -> Unit,
-    onDebugJumpToLevel30: () -> Unit,
-    onUndo: () -> Unit
+    onSelectGameMode: (GameMode) -> Unit,
+    onDebugJumpToLevel30: () -> Unit
 ) {
     val accent = LocalPaletteColors.current.accent
     var showThemePicker by remember { mutableStateOf(false) }
+    var showModePicker by remember { mutableStateOf(false) }
 
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column {
-            Text(
-                text = "2048",
-                style = MaterialTheme.typography.headlineLarge,
-                color = accent
-            )
-            Text(
-                text = "Lv. $level",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
-            )
-            LinearProgressIndicator(
-                progress = { levelProgress },
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            OutlinedButton(
+                onClick = { showModePicker = true },
+                shape = RoundedCornerShape(10.dp),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = accent),
+                contentPadding = PaddingValues(12.dp),
                 modifier = Modifier
-                    .padding(top = 3.dp)
-                    .width(70.dp)
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp)),
-                color = accent,
-                trackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.15f),
-                drawStopIndicator = {}
-            )
-            if (currentStreak >= 1) {
+                    .padding(end = 10.dp)
+                    .semantics { contentDescription = "Game menu" }
+            ) {
+                Text("☰", fontSize = 18.sp, maxLines = 1)
+            }
+            Column {
                 Text(
-                    text = "🔥 $currentStreak-day streak",
-                    modifier = Modifier.padding(top = 4.dp),
+                    text = "2048",
+                    style = MaterialTheme.typography.headlineLarge,
+                    color = accent
+                )
+                Text(
+                    text = "Lv. $level",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
                 )
+                LinearProgressIndicator(
+                    progress = { levelProgress },
+                    modifier = Modifier
+                        .padding(top = 3.dp)
+                        .width(70.dp)
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp)),
+                    color = accent,
+                    trackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.15f),
+                    drawStopIndicator = {}
+                )
+                if (currentStreak >= 1) {
+                    Text(
+                        text = "🔥 $currentStreak-day streak",
+                        modifier = Modifier.padding(top = 4.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                    )
+                }
             }
         }
 
@@ -381,20 +441,6 @@ private fun Header(
         ) {
             Text("🎨", fontSize = 18.sp, maxLines = 1)
         }
-        BadgedBox(
-            badge = { if (undosRemaining > 0) Badge { Text("$undosRemaining") } }
-        ) {
-            OutlinedButton(
-                onClick = onUndo,
-                enabled = canUndo,
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = accent),
-                contentPadding = PaddingValues(12.dp),
-                modifier = Modifier.semantics { contentDescription = "Undo, $undosRemaining left" }
-            ) {
-                Text("↩️", fontSize = 18.sp, maxLines = 1)
-            }
-        }
         OutlinedButton(
             onClick = onNewGame,
             shape = RoundedCornerShape(10.dp),
@@ -420,6 +466,17 @@ private fun Header(
             onDismiss = { showThemePicker = false }
         )
     }
+
+    if (showModePicker) {
+        GameModeDialog(
+            currentMode = gameMode,
+            onSelect = {
+                onSelectGameMode(it)
+                showModePicker = false
+            },
+            onDismiss = { showModePicker = false }
+        )
+    }
 }
 
 /** Landscape counterpart to [Header]: the same wordmark/level/streak/scores/buttons, but
@@ -436,20 +493,20 @@ private fun Sidebar(
     levelProgress: Float,
     selectedPalette: TilePalette,
     selectedBoardSize: BoardSizeOption,
-    canUndo: Boolean,
-    undosRemaining: Int,
+    gameMode: GameMode,
     gamesPlayed: Int,
     highestTileEver: Int,
     totalMerges: Long,
     onNewGame: () -> Unit,
     onSelectPalette: (TilePalette) -> Unit,
     onSelectBoardSize: (BoardSizeOption) -> Unit,
+    onSelectGameMode: (GameMode) -> Unit,
     onDebugJumpToLevel30: () -> Unit,
-    onUndo: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val accent = LocalPaletteColors.current.accent
     var showThemePicker by remember { mutableStateOf(false) }
+    var showModePicker by remember { mutableStateOf(false) }
 
     // fillMaxHeight + verticalScroll: three buttons plus the wordmark/level/streak/scores no
     // longer reliably fit a short landscape screen's height (the row that added Undo was the
@@ -463,6 +520,16 @@ private fun Sidebar(
             .fillMaxHeight()
             .verticalScroll(rememberScrollState())
     ) {
+        OutlinedButton(
+            onClick = { showModePicker = true },
+            shape = RoundedCornerShape(10.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = accent),
+            contentPadding = PaddingValues(12.dp),
+            modifier = Modifier.semantics { contentDescription = "Game menu" }
+        ) {
+            Text("☰", fontSize = 18.sp, maxLines = 1)
+        }
+        Spacer(modifier = Modifier.height(10.dp))
         Text(
             text = "2048",
             style = MaterialTheme.typography.headlineMedium,
@@ -515,16 +582,6 @@ private fun Sidebar(
         }
         Spacer(modifier = Modifier.height(10.dp))
         OutlinedButton(
-            onClick = onUndo,
-            enabled = canUndo,
-            shape = RoundedCornerShape(10.dp),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = accent),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("↩️ Undo ($undosRemaining)", fontWeight = FontWeight.SemiBold, maxLines = 1)
-        }
-        Spacer(modifier = Modifier.height(10.dp))
-        OutlinedButton(
             onClick = onNewGame,
             shape = RoundedCornerShape(10.dp),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = accent),
@@ -550,6 +607,67 @@ private fun Sidebar(
             onDismiss = { showThemePicker = false }
         )
     }
+
+    if (showModePicker) {
+        GameModeDialog(
+            currentMode = gameMode,
+            onSelect = {
+                onSelectGameMode(it)
+                showModePicker = false
+            },
+            onDismiss = { showModePicker = false }
+        )
+    }
+}
+
+@Composable
+private fun GameModeDialog(
+    currentMode: GameMode,
+    onSelect: (GameMode) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        },
+        title = { Text("Choose game") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                GameMode.entries.forEach { mode ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { onSelect(mode) }
+                            .padding(vertical = 10.dp, horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(text = mode.displayName, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                text = if (mode == GameMode.ORIGINAL) {
+                                    "Classic rules: swipe to move, no Undo, no Jokers."
+                                } else {
+                                    "Adds Undo plus the Teleport and Swap Jokers."
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                            )
+                        }
+                        if (mode == currentMode) {
+                            Text(
+                                text = "✓",
+                                color = LocalPaletteColors.current.accent,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    )
 }
 
 @Composable
@@ -809,6 +927,134 @@ private fun ScoreChip(
     }
 }
 
+/** Instructional pill shown over the board while a Joker is active, telling the player what to
+ *  tap next, plus a way to back out without spending the allowance. */
+@Composable
+private fun JokerBanner(joker: Joker, hasPicked: Boolean, onCancel: () -> Unit, modifier: Modifier = Modifier) {
+    val palette = LocalPaletteColors.current
+    val instruction = when (joker) {
+        Joker.TELEPORT -> if (!hasPicked) "Tap a tile to teleport" else "Tap an empty cell to move it there"
+        Joker.SWAP -> if (!hasPicked) "Tap a tile to swap" else "Tap another tile to swap with"
+    }
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(palette.surfaceChip)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text(
+            text = instruction,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onBackground
+        )
+        Text(
+            text = "✕",
+            fontWeight = FontWeight.Bold,
+            color = palette.accent,
+            modifier = Modifier.clickable(onClick = onCancel)
+        )
+    }
+}
+
+/** Undo/Teleport/Swap, grouped into one flat rounded bar below the board (rather than each as
+ *  its own outlined button up in the header) -- mirrors play2048.co/plus's bottom action tray. */
+@Composable
+private fun JokerActionBar(
+    canUndo: Boolean,
+    undosRemaining: Int,
+    activeJoker: Joker?,
+    teleportsRemaining: Int,
+    swapsRemaining: Int,
+    onUndo: () -> Unit,
+    onStartTeleport: () -> Unit,
+    onStartSwap: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val palette = LocalPaletteColors.current
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(20.dp))
+            .background(palette.surfaceChip)
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        JokerActionButton(
+            icon = "↩️",
+            enabled = canUndo,
+            isActive = false,
+            remaining = undosRemaining,
+            max = MAX_UNDOS,
+            contentDescription = "Undo, $undosRemaining left",
+            onClick = onUndo
+        )
+        JokerActionButton(
+            icon = "🌀",
+            enabled = teleportsRemaining > 0,
+            isActive = activeJoker == Joker.TELEPORT,
+            remaining = teleportsRemaining,
+            max = MAX_TELEPORTS,
+            contentDescription = "Teleport, $teleportsRemaining left",
+            onClick = onStartTeleport
+        )
+        JokerActionButton(
+            icon = "🔀",
+            enabled = swapsRemaining > 0,
+            isActive = activeJoker == Joker.SWAP,
+            remaining = swapsRemaining,
+            max = MAX_SWAPS,
+            contentDescription = "Swap, $swapsRemaining left",
+            onClick = onStartSwap
+        )
+    }
+}
+
+/** One flat icon tile in [JokerActionBar], with a row of small dashes underneath standing in
+ *  for a numeric badge -- [remaining] of [max] filled in accent, the rest faded. */
+@Composable
+private fun JokerActionButton(
+    icon: String,
+    enabled: Boolean,
+    isActive: Boolean,
+    remaining: Int,
+    max: Int,
+    contentDescription: String,
+    onClick: () -> Unit
+) {
+    val palette = LocalPaletteColors.current
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            modifier = Modifier
+                .size(52.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(if (isActive) palette.accent.copy(alpha = 0.25f) else palette.emptyCell)
+                .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
+                .semantics { this.contentDescription = contentDescription },
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = icon,
+                fontSize = 22.sp,
+                modifier = Modifier.alpha(if (enabled) 1f else 0.35f)
+            )
+        }
+        Spacer(modifier = Modifier.height(5.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+            repeat(max) { i ->
+                Box(
+                    modifier = Modifier
+                        .size(width = 10.dp, height = 3.dp)
+                        .clip(RoundedCornerShape(1.5.dp))
+                        .background(if (i < remaining) palette.accent else palette.accent.copy(alpha = 0.2f))
+                )
+            }
+        }
+    }
+}
+
 /** Shows a transient "x3 Combo!" callout when a single move merges more than one pair. */
 @Composable
 private fun ComboPopup(comboCount: Int, moveToken: Long, modifier: Modifier = Modifier) {
@@ -898,7 +1144,11 @@ private fun Board(
     spawnedTileIds: Set<Int>,
     moveToken: Long,
     invalidMoveToken: Long,
-    onSwipe: (Direction) -> Unit
+    onSwipe: (Direction) -> Unit,
+    activeJoker: Joker? = null,
+    jokerFirstTileId: Int? = null,
+    onJokerTileTap: (Int) -> Unit = {},
+    onJokerCellTap: (Int, Int) -> Unit = { _, _ -> }
 ) {
     val palette = LocalPaletteColors.current
     val haptics = LocalHapticFeedback.current
@@ -988,15 +1238,26 @@ private fun Board(
         fun xFor(col: Int): Dp = spacing + (cellSize + spacing) * col
         fun yFor(row: Int): Dp = spacing + (cellSize + spacing) * row
 
-        // Static empty-cell backdrop.
+        // Static empty-cell backdrop. Highlighted as valid Teleport drop targets once a tile
+        // has been picked -- Swap never targets a cell, only a second tile.
+        val isPickingTeleportTarget = activeJoker == Joker.TELEPORT && jokerFirstTileId != null
+        val occupied = tiles.map { it.row to it.col }.toSet()
         for (r in 0 until boardSize) {
             for (c in 0 until boardSize) {
+                val isValidDropTarget = isPickingTeleportTarget && (r to c) !in occupied
                 Box(
                     modifier = Modifier
                         .offset(x = xFor(c), y = yFor(r))
                         .size(cellSize)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(palette.emptyCell)
+                        .background(if (isValidDropTarget) palette.accent.copy(alpha = 0.28f) else palette.emptyCell)
+                        .then(
+                            if (isValidDropTarget) {
+                                Modifier.clickable { onJokerCellTap(r, c) }
+                            } else {
+                                Modifier
+                            }
+                        )
                 )
             }
         }
@@ -1015,7 +1276,8 @@ private fun Board(
             }
         }
 
-        // Live tiles.
+        // Live tiles. Every tile is tappable while a Joker is active: Teleport re-picks which
+        // tile will move, Swap picks the first tile then completes on a second, different one.
         for (tile in tiles) {
             key(tile.id) {
                 AnimatedTile(
@@ -1025,7 +1287,10 @@ private fun Board(
                     cellSize = cellSize,
                     isMerged = moveToken > 0 && tile.id in mergedTileIds,
                     isSpawned = tile.id in spawnedTileIds,
-                    moveToken = moveToken
+                    moveToken = moveToken,
+                    isJokerPicked = activeJoker != null && tile.id == jokerFirstTileId,
+                    isJokerSelectable = activeJoker != null,
+                    onJokerTap = if (activeJoker != null) ({ onJokerTileTap(tile.id) }) else null
                 )
             }
         }
@@ -1040,7 +1305,10 @@ private fun AnimatedTile(
     cellSize: Dp,
     isMerged: Boolean,
     isSpawned: Boolean,
-    moveToken: Long
+    moveToken: Long,
+    isJokerPicked: Boolean = false,
+    isJokerSelectable: Boolean = false,
+    onJokerTap: (() -> Unit)? = null
 ) {
     val palette = LocalPaletteColors.current
     val animatedX by animateDpAsState(
@@ -1082,7 +1350,17 @@ private fun AnimatedTile(
                 scaleY = scale.value
             }
             .clip(RoundedCornerShape(10.dp))
-            .background(palette.tileColor(tile.value)),
+            .background(palette.tileColor(tile.value))
+            .then(
+                if (isJokerPicked) {
+                    Modifier.border(3.dp, palette.accent, RoundedCornerShape(10.dp))
+                } else if (isJokerSelectable) {
+                    Modifier.border(1.dp, palette.accent.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                } else {
+                    Modifier
+                }
+            )
+            .then(if (onJokerTap != null) Modifier.clickable(onClick = onJokerTap) else Modifier),
         contentAlignment = Alignment.Center
     ) {
         Text(

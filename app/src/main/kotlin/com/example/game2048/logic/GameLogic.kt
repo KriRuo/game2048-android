@@ -13,6 +13,24 @@ const val MEGA_BOARD_SIZE = 6
 
 enum class Direction { LEFT, RIGHT, UP, DOWN }
 
+/** The two "Joker" powerups available in [GameMode.EXTENDED], reached by tapping tiles/cells
+ *  directly rather than swiping -- see [Game2048Engine.teleportTile]/[Game2048Engine.swapTiles]. */
+enum class Joker { TELEPORT, SWAP }
+
+/** Which ruleset is active. ORIGINAL matches the classic 2048 -- swipe only, no Undo, no
+ *  Jokers. EXTENDED is this app's enhanced version. Switching doesn't touch the board in
+ *  progress; it only changes which actions the UI exposes (see
+ *  [com.example.game2048.GameViewModel.onSelectGameMode]). */
+enum class GameMode(val id: String, val displayName: String) {
+    ORIGINAL("original", "Original"),
+    EXTENDED("extended", "Extended");
+
+    companion object {
+        val DEFAULT = EXTENDED
+        fun fromId(id: String?): GameMode = entries.firstOrNull { it.id == id } ?: DEFAULT
+    }
+}
+
 /** A single tile on the board. [id] is stable across moves so the UI can animate it. */
 data class Tile(val id: Int, val value: Int, val row: Int, val col: Int)
 
@@ -55,6 +73,15 @@ data class TileMovement(
     val toRow: Int,
     val toCol: Int,
     val isConsumedByMerge: Boolean
+)
+
+/** Result of a Joker action ([Game2048Engine.teleportTile]/[Game2048Engine.swapTiles]): tiles
+ *  reposition with no merge and no new tile spawned. [applied] is false (and [state] unchanged)
+ *  if the requested tile(s)/cell were invalid -- e.g. the target cell wasn't actually empty. */
+data class JokerResult(
+    val state: GameState,
+    val applied: Boolean,
+    val movements: List<TileMovement> = emptyList()
 )
 
 /** Result of attempting a move, with enough detail for the UI to animate it. */
@@ -120,6 +147,50 @@ class Game2048Engine(private val random: Random = Random.Default) {
             mergedTileIds = mergedIds,
             spawnedTileId = spawnedId
         )
+    }
+
+    /** Moves the tile with [tileId] to ([toRow], [toCol]) if that cell is in bounds and empty.
+     *  No merge, no spawn -- a pure reposition, for the Teleport Joker (see [Joker]). Re-checks
+     *  game-over the same way [move] does: unlike a normal move this can't add an empty cell,
+     *  but a full board can only be teleported *from* in the first place if [toRow]/[toCol] is
+     *  itself the one empty cell, so this only ever matches [move]'s notion of game-over. */
+    fun teleportTile(state: GameState, tileId: Int, toRow: Int, toCol: Int): JokerResult {
+        val tile = state.tiles.firstOrNull { it.id == tileId } ?: return JokerResult(state, applied = false)
+        if (toRow !in 0 until state.boardSize || toCol !in 0 until state.boardSize) {
+            return JokerResult(state, applied = false)
+        }
+        if (tile.row == toRow && tile.col == toCol) return JokerResult(state, applied = false)
+        if (state.tiles.any { it.row == toRow && it.col == toCol }) return JokerResult(state, applied = false)
+
+        val newTiles = state.tiles.map { if (it.id == tileId) it.copy(row = toRow, col = toCol) else it }
+        val movement = TileMovement(tileId, tile.row, tile.col, toRow, toCol, isConsumedByMerge = false)
+        val newState = state.copy(tiles = newTiles, isGameOver = !canAnyMoveBeMade(newTiles, state.boardSize))
+        return JokerResult(newState, applied = true, movements = listOf(movement))
+    }
+
+    /** Exchanges the positions of the two given tiles. No merge, no spawn -- for the Swap Joker
+     *  (see [Joker]). Allowed even if [state.isGameOver][GameState.isGameOver]: unlike Teleport
+     *  (which needs an empty cell that can't exist on a full dead board), swapping two tiles on
+     *  a full board can unlock a merge that wasn't there before, which is the whole point of
+     *  offering it as a way out of a stuck game. */
+    fun swapTiles(state: GameState, tileId1: Int, tileId2: Int): JokerResult {
+        if (tileId1 == tileId2) return JokerResult(state, applied = false)
+        val t1 = state.tiles.firstOrNull { it.id == tileId1 } ?: return JokerResult(state, applied = false)
+        val t2 = state.tiles.firstOrNull { it.id == tileId2 } ?: return JokerResult(state, applied = false)
+
+        val newTiles = state.tiles.map {
+            when (it.id) {
+                tileId1 -> it.copy(row = t2.row, col = t2.col)
+                tileId2 -> it.copy(row = t1.row, col = t1.col)
+                else -> it
+            }
+        }
+        val movements = listOf(
+            TileMovement(tileId1, t1.row, t1.col, t2.row, t2.col, isConsumedByMerge = false),
+            TileMovement(tileId2, t2.row, t2.col, t1.row, t1.col, isConsumedByMerge = false)
+        )
+        val newState = state.copy(tiles = newTiles, isGameOver = !canAnyMoveBeMade(newTiles, state.boardSize))
+        return JokerResult(newState, applied = true, movements = movements)
     }
 
     /** Adds one random tile (90% a 2, 10% a 4) into a random empty cell, if any exist. */

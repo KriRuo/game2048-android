@@ -216,4 +216,77 @@ class Game2048EngineTest {
         val survivor = result.state.tiles.first { it.id == 1 }
         assertEquals(3 to 0, survivor.row to survivor.col)
     }
+
+    @Test
+    fun `teleportTile moves a tile to an empty cell with no merge and no spawn`() {
+        val state = GameState(tiles = listOf(Tile(1, 2, 0, 0), Tile(2, 4, 0, 1)), nextTileId = 3)
+        val result = engine.teleportTile(state, tileId = 1, toRow = 3, toCol = 3)
+
+        assertTrue(result.applied)
+        assertEquals(2, result.state.tiles.size)
+        val moved = result.state.tiles.first { it.id == 1 }
+        assertEquals(3 to 3, moved.row to moved.col)
+        assertEquals(2, moved.value)
+        assertEquals(1, result.movements.single().tileId)
+        assertFalse(result.movements.single().isConsumedByMerge)
+    }
+
+    @Test
+    fun `teleportTile refuses an occupied target cell and leaves state untouched`() {
+        val state = GameState(tiles = listOf(Tile(1, 2, 0, 0), Tile(2, 4, 0, 1)), nextTileId = 3)
+        val result = engine.teleportTile(state, tileId = 1, toRow = 0, toCol = 1)
+
+        assertFalse(result.applied)
+        assertEquals(state, result.state)
+    }
+
+    @Test
+    fun `teleportTile refuses an out-of-bounds cell and an unknown tile id`() {
+        val state = GameState(tiles = listOf(Tile(1, 2, 0, 0)), nextTileId = 2)
+        assertFalse(engine.teleportTile(state, tileId = 1, toRow = BOARD_SIZE, toCol = 0).applied)
+        assertFalse(engine.teleportTile(state, tileId = 99, toRow = 1, toCol = 1).applied)
+    }
+
+    @Test
+    fun `swapTiles exchanges two tiles' positions with no merge and no spawn`() {
+        val state = GameState(tiles = listOf(Tile(1, 2, 0, 0), Tile(2, 4, 3, 3)), nextTileId = 3)
+        val result = engine.swapTiles(state, tileId1 = 1, tileId2 = 2)
+
+        assertTrue(result.applied)
+        assertEquals(2, result.state.tiles.size)
+        val t1 = result.state.tiles.first { it.id == 1 }
+        val t2 = result.state.tiles.first { it.id == 2 }
+        assertEquals(3 to 3, t1.row to t1.col)
+        assertEquals(0 to 0, t2.row to t2.col)
+        assertEquals(2, t1.value)
+        assertEquals(4, t2.value)
+        assertEquals(2, result.movements.size)
+    }
+
+    @Test
+    fun `swapTiles refuses the same tile twice or an unknown tile id`() {
+        val state = GameState(tiles = listOf(Tile(1, 2, 0, 0), Tile(2, 4, 0, 1)), nextTileId = 3)
+        assertFalse(engine.swapTiles(state, tileId1 = 1, tileId2 = 1).applied)
+        assertFalse(engine.swapTiles(state, tileId1 = 1, tileId2 = 99).applied)
+    }
+
+    @Test
+    fun `swapTiles can unstick a full board by unlocking a merge`() {
+        // Full 4x4, no adjacent equal values anywhere -- game over -- except tiles 1 and 6 are
+        // both 2s that would be adjacent (0,0)-(0,1) if swapped with their current neighbors.
+        val tiles = listOf(
+            Tile(1, 2, 0, 0), Tile(2, 4, 0, 1), Tile(3, 2, 0, 2), Tile(4, 4, 0, 3),
+            Tile(5, 4, 1, 0), Tile(6, 2, 1, 1), Tile(7, 4, 1, 2), Tile(8, 2, 1, 3),
+            Tile(9, 2, 2, 0), Tile(10, 4, 2, 1), Tile(11, 2, 2, 2), Tile(12, 4, 2, 3),
+            Tile(13, 4, 3, 0), Tile(14, 2, 3, 1), Tile(15, 4, 3, 2), Tile(16, 2, 3, 3),
+        )
+        val state = GameState(tiles = tiles, nextTileId = 17, isGameOver = true)
+        assertFalse(engine.canAnyMoveBeMade(tiles))
+
+        // Swap tile 2 (value 4 at 0,1) with tile 6 (value 2 at 1,1): puts a 2 at (0,1), next to
+        // tile 1's 2 at (0,0) -- a fresh merge opportunity that didn't exist before.
+        val result = engine.swapTiles(state, tileId1 = 2, tileId2 = 6)
+        assertTrue(result.applied)
+        assertFalse(result.state.isGameOver)
+    }
 }

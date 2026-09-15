@@ -5,9 +5,11 @@ import androidx.lifecycle.AndroidViewModel
 import com.example.game2048.logic.BoardSizeOption
 import com.example.game2048.logic.BoardSizeUnlocks
 import com.example.game2048.logic.Direction
+import com.example.game2048.logic.GameMode
 import com.example.game2048.logic.GameState
 import com.example.game2048.logic.Game2048Engine
 import com.example.game2048.logic.GameStateSerializer
+import com.example.game2048.logic.Joker
 import com.example.game2048.logic.LevelTracker
 import com.example.game2048.logic.StreakState
 import com.example.game2048.logic.StreakTracker
@@ -29,6 +31,7 @@ private const val KEY_STREAK_LAST_DAY = "streak_last_day"
 private const val KEY_CUMULATIVE_SCORE = "cumulative_score"
 private const val KEY_SELECTED_PALETTE = "selected_palette"
 private const val KEY_SELECTED_BOARD_SIZE = "selected_board_size"
+private const val KEY_SELECTED_GAME_MODE = "selected_game_mode"
 private const val KEY_GAMES_PLAYED = "games_played"
 private const val KEY_HIGHEST_TILE_EVER = "highest_tile_ever"
 private const val KEY_TOTAL_MERGES = "total_merges"
@@ -37,8 +40,15 @@ private const val KEY_TOTAL_MERGES = "total_merges"
  *  persisted across a process restart, along with the one-move [GameUiState.undoState] snapshot
  *  it spends -- resuming a killed app resets the allowance. Acceptable for a casual
  *  single-player game with no stakes riding on it (same reasoning as the debug level-30
- *  shortcut existing at all). */
-private const val MAX_UNDOS = 3
+ *  shortcut existing at all). Not private: [GameScreen] reads it to size the dash/pip
+ *  indicator under the Undo button. */
+const val MAX_UNDOS = 3
+
+/** Uses allowed per game for each Joker (see [GameUiState.teleportsRemaining]/[GameUiState.
+ *  swapsRemaining]), reset to this on New Game -- same not-persisted-across-restart reasoning
+ *  as [MAX_UNDOS]. Not private, for the same dash-indicator reason. */
+const val MAX_TELEPORTS = 2
+const val MAX_SWAPS = 2
 
 /**
  * Everything the UI needs to render one frame of the game, including enough detail about
@@ -85,6 +95,19 @@ data class GameUiState(
     val undoState: GameState? = null,
     /** Single-move undos left this game; resets to [MAX_UNDOS] on New Game. */
     val undosRemaining: Int = MAX_UNDOS,
+    /** Which ruleset is active -- see [GameMode]. ORIGINAL hides Undo and both Jokers from the
+     *  UI; switching doesn't touch the board in progress. */
+    val gameMode: GameMode = GameMode.DEFAULT,
+    /** The Joker currently being aimed (player tapped its button, hasn't tapped a target yet
+     *  or is midway through Swap's two-tile pick), or null when neither is active. */
+    val activeJoker: Joker? = null,
+    /** For [Joker.TELEPORT]: the tile picked to move. For [Joker.SWAP]: the first of the two
+     *  tiles picked. Null until the player has tapped a tile after activating a Joker. */
+    val jokerFirstTileId: Int? = null,
+    /** Teleport uses left this game; resets to [MAX_TELEPORTS] on New Game. */
+    val teleportsRemaining: Int = MAX_TELEPORTS,
+    /** Swap uses left this game; resets to [MAX_SWAPS] on New Game. */
+    val swapsRemaining: Int = MAX_SWAPS,
     /** Lifetime stats, never reset by New Game (see the "Your Stats" section of Customize). */
     val gamesPlayed: Int = 0,
     val highestTileEver: Int = 0,
@@ -106,6 +129,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private var bestScore: Int = prefs.getInt(KEY_BEST_SCORE, 0)
     private var selectedPalette: TilePalette = TilePalette.fromId(prefs.getString(KEY_SELECTED_PALETTE, null))
     private var selectedBoardSize: BoardSizeOption = BoardSizeOption.fromId(prefs.getString(KEY_SELECTED_BOARD_SIZE, null))
+    private var selectedGameMode: GameMode = GameMode.fromId(prefs.getString(KEY_SELECTED_GAME_MODE, null))
     private var gamesPlayed: Int = prefs.getInt(KEY_GAMES_PLAYED, 0)
     private var highestTileEver: Int = prefs.getInt(KEY_HIGHEST_TILE_EVER, 0)
     private var totalMerges: Long = prefs.getLong(KEY_TOTAL_MERGES, 0L)
@@ -186,6 +210,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             levelAtGameStart = level,
             selectedPalette = selectedPalette,
             selectedBoardSize = selectedBoardSize,
+            gameMode = selectedGameMode,
             gamesPlayed = gamesPlayed,
             highestTileEver = highestTileEver,
             totalMerges = totalMerges,
@@ -218,6 +243,107 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         selectedBoardSize = option
         prefs.edit().putString(KEY_SELECTED_BOARD_SIZE, option.id).commit()
         _uiState.value = current.copy(selectedBoardSize = option)
+    }
+
+    /** Switches ruleset (see [GameMode]). Doesn't reset the board, score, or either allowance
+     *  in progress -- it only changes which actions the UI exposes going forward, so it's safe
+     *  to flip mid-game without losing anything. */
+    fun onSelectGameMode(mode: GameMode) {
+        if (mode == selectedGameMode) return
+        selectedGameMode = mode
+        prefs.edit().putString(KEY_SELECTED_GAME_MODE, mode.id).commit()
+        _uiState.value = _uiState.value.copy(gameMode = mode, activeJoker = null, jokerFirstTileId = null)
+    }
+
+    /** Activates the Teleport Joker: the next tile tap picks (or re-picks) the tile to move,
+     *  and the next empty-cell tap ([onJokerCellTapped]) moves it there. No-ops in
+     *  [GameMode.ORIGINAL] or once the allowance is spent. */
+    fun onStartTeleport() {
+        val current = _uiState.value
+        if (current.gameMode != GameMode.EXTENDED || current.teleportsRemaining <= 0) return
+        _uiState.value = current.copy(activeJoker = Joker.TELEPORT, jokerFirstTileId = null)
+    }
+
+    /** Activates the Swap Joker: the next two tile taps ([onJokerTileTapped]) exchange
+     *  positions. No-ops in [GameMode.ORIGINAL] or once the allowance is spent. */
+    fun onStartSwap() {
+        val current = _uiState.value
+        if (current.gameMode != GameMode.EXTENDED || current.swapsRemaining <= 0) return
+        _uiState.value = current.copy(activeJoker = Joker.SWAP, jokerFirstTileId = null)
+    }
+
+    /** Backs out of whichever Joker is active without spending its allowance. */
+    fun onCancelJoker() {
+        _uiState.value = _uiState.value.copy(activeJoker = null, jokerFirstTileId = null)
+    }
+
+    /** Tap on a tile while a Joker is active. Teleport: (re-)picks the tile to move -- tapping
+     *  a different tile before an empty cell just changes which one will move. Swap: picks the
+     *  first tile, then completes as soon as a *different* tile is tapped as the second pick
+     *  (tapping the same tile again just re-picks it, so a mis-tap isn't a dead end). */
+    fun onJokerTileTapped(tileId: Int) {
+        val current = _uiState.value
+        when (current.activeJoker) {
+            Joker.TELEPORT -> _uiState.value = current.copy(jokerFirstTileId = tileId)
+            Joker.SWAP -> {
+                val first = current.jokerFirstTileId
+                if (first == null || first == tileId) {
+                    _uiState.value = current.copy(jokerFirstTileId = tileId)
+                } else {
+                    applySwap(first, tileId)
+                }
+            }
+            null -> Unit
+        }
+    }
+
+    /** Tap on an empty cell while Teleport is active and a tile has been picked: completes the
+     *  move. No-op otherwise (including for Swap, which only ever targets tiles). */
+    fun onJokerCellTapped(row: Int, col: Int) {
+        val current = _uiState.value
+        if (current.activeJoker != Joker.TELEPORT) return
+        val tileId = current.jokerFirstTileId ?: return
+        applyTeleport(tileId, row, col)
+    }
+
+    private fun applyTeleport(tileId: Int, row: Int, col: Int) {
+        val current = _uiState.value
+        val result = engine.teleportTile(current.game, tileId, row, col)
+        if (!result.applied) return
+        persist(result.state, includeBest = false)
+        _uiState.value = current.copy(
+            game = result.state,
+            lastMovements = result.movements,
+            lastMergedTileIds = emptySet(),
+            lastSpawnedTileIds = emptySet(),
+            previousTilesById = current.game.tiles.associateBy { it.id },
+            lastScoreGained = 0,
+            moveToken = current.moveToken + 1,
+            undoState = current.game,
+            activeJoker = null,
+            jokerFirstTileId = null,
+            teleportsRemaining = current.teleportsRemaining - 1
+        )
+    }
+
+    private fun applySwap(tileId1: Int, tileId2: Int) {
+        val current = _uiState.value
+        val result = engine.swapTiles(current.game, tileId1, tileId2)
+        if (!result.applied) return
+        persist(result.state, includeBest = false)
+        _uiState.value = current.copy(
+            game = result.state,
+            lastMovements = result.movements,
+            lastMergedTileIds = emptySet(),
+            lastSpawnedTileIds = emptySet(),
+            previousTilesById = current.game.tiles.associateBy { it.id },
+            lastScoreGained = 0,
+            moveToken = current.moveToken + 1,
+            undoState = current.game,
+            activeJoker = null,
+            jokerFirstTileId = null,
+            swapsRemaining = current.swapsRemaining - 1
+        )
     }
 
     /** Debug backdoor (tap the SCORE chip 5x quickly): jumps straight to Level 30, mainly so
@@ -273,6 +399,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             levelAtGameStart = level,
             selectedPalette = selectedPalette,
             selectedBoardSize = selectedBoardSize,
+            gameMode = selectedGameMode,
             gamesPlayed = gamesPlayed,
             highestTileEver = highestTileEver,
             totalMerges = totalMerges
