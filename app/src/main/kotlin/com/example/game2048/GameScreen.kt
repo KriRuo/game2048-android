@@ -3,10 +3,14 @@ package com.example.game2048
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -82,6 +86,8 @@ import com.example.game2048.ui.theme.LocalIsDarkTheme
 import com.example.game2048.ui.theme.LocalPaletteColors
 import com.example.game2048.ui.theme.paletteColorsFor
 import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -153,19 +159,30 @@ private fun StartScreen(
             fontWeight = FontWeight.Bold,
             color = accent
         )
+        Row(
+            modifier = Modifier.padding(top = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            ScoreChip(label = "LEVEL", value = uiState.level)
+            ScoreChip(label = "BEST", value = uiState.game.best)
+        }
+        if (uiState.currentStreak >= 1) {
+            Text(
+                text = "🔥 ${uiState.currentStreak}-day streak",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
         Text(
-            text = "Lv. ${uiState.level} · Best ${uiState.game.best}",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
-            modifier = Modifier.padding(top = 4.dp)
+            text = "CHOOSE HOW YOU WANT TO PLAY",
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = 1.sp,
+            color = accent,
+            modifier = Modifier.padding(top = 28.dp)
         )
-        Text(
-            text = "Choose how you want to play",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-            modifier = Modifier.padding(top = 20.dp)
-        )
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(14.dp))
         Column(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -190,6 +207,37 @@ private fun StartScreen(
                 fontWeight = FontWeight.Bold,
                 fontSize = 18.sp,
                 modifier = Modifier.padding(vertical = 6.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(20.dp))
+        OrbitFlourish()
+    }
+}
+
+/** Purely decorative -- three dots endlessly circling a center point, sat under the Play
+ *  button as a small bit of life on an otherwise static screen. Doesn't indicate loading;
+ *  nothing on [StartScreen] is ever actually waiting on anything. */
+@Composable
+private fun OrbitFlourish(modifier: Modifier = Modifier) {
+    val palette = LocalPaletteColors.current
+    val transition = rememberInfiniteTransition(label = "orbit")
+    val angleDegrees by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(animation = tween(2600, easing = LinearEasing)),
+        label = "orbitAngle"
+    )
+    val dotCount = 3
+    val radiusDp = 16.0
+    Box(modifier = modifier.size(56.dp), contentAlignment = Alignment.Center) {
+        for (i in 0 until dotCount) {
+            val radians = Math.toRadians((angleDegrees + i * (360f / dotCount)).toDouble())
+            Box(
+                modifier = Modifier
+                    .offset(x = (radiusDp * cos(radians)).dp, y = (radiusDp * sin(radians)).dp)
+                    .size(9.dp)
+                    .clip(CircleShape)
+                    .background(palette.accent.copy(alpha = 1f - i * 0.28f))
             )
         }
     }
