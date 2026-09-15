@@ -11,6 +11,9 @@ const val BIG_BOARD_SIZE = 5
 /** Board side length for the optional "Mega Board" mode (see [BoardSizeOption]). */
 const val MEGA_BOARD_SIZE = 6
 
+/** Board side length for the optional "Giant Board" mode (see [BoardSizeOption]). */
+const val GIANT_BOARD_SIZE = 8
+
 enum class Direction { LEFT, RIGHT, UP, DOWN }
 
 /** The tap-to-target "Joker" powerups available in [GameMode.EXTENDED], reached by tapping

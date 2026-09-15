@@ -9,7 +9,8 @@ package com.example.game2048.logic
 enum class BoardSizeOption(val id: String, val displayName: String, val size: Int, val unlockLevel: Int) {
     CLASSIC("classic", "Classic (4×4)", BOARD_SIZE, unlockLevel = 1),
     BIG("big", "Big Board (5×5)", BIG_BOARD_SIZE, unlockLevel = 10),
-    MEGA("mega", "Mega Board (6×6)", MEGA_BOARD_SIZE, unlockLevel = 15);
+    MEGA("mega", "Mega Board (6×6)", MEGA_BOARD_SIZE, unlockLevel = 15),
+    GIANT("giant", "Giant Board (8×8)", GIANT_BOARD_SIZE, unlockLevel = 20);
 
     companion object {
         val DEFAULT = CLASSIC

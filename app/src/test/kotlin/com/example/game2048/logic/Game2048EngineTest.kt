@@ -351,4 +351,17 @@ class Game2048EngineTest {
         repeat(4) { current = engine.rotateBoard(current).state }
         assertEquals(state.tiles.map { it.row to it.col }.toSet(), current.tiles.map { it.row to it.col }.toSet())
     }
+
+    @Test
+    fun `Giant Board (8x8) plays with the same generic boardSize logic as 5x5 and 6x6`() {
+        val state = engine.newGame(boardSize = GIANT_BOARD_SIZE)
+        assertEquals(GIANT_BOARD_SIZE, state.boardSize)
+        assertTrue(state.tiles.all { it.row in 0 until GIANT_BOARD_SIZE && it.col in 0 until GIANT_BOARD_SIZE })
+
+        val slideState = GameState(tiles = listOf(Tile(1, 2, 5, 7)), nextTileId = 2, boardSize = GIANT_BOARD_SIZE)
+        val result = engine.move(slideState, Direction.LEFT)
+        assertTrue(result.moved)
+        val survivor = result.state.tiles.first { it.id == 1 }
+        assertEquals(5 to 0, survivor.row to survivor.col)
+    }
 }
