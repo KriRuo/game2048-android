@@ -16,14 +16,44 @@ Native Android 2048 in Kotlin + Jetpack Compose (Material 3), `applicationId`
 ./gradlew assembleRelease      # release APK (unsigned unless keystore.properties is present)
 ```
 
-There is no CI configured — verification is `./gradlew test` plus manual install/play on a
-device or the `game2048test` emulator (see local machine notes below). In day-to-day
-development this repo is typically built where the Android SDK/Gradle are available, not
-necessarily on the machine running Claude Code.
+GitHub Actions CI is configured (see below) — locally, verification is still `./gradlew test`
+plus manual install/play on a device or the `game2048test` emulator (see local machine notes
+below). In day-to-day development this repo is typically built where the Android SDK/Gradle
+are available, not necessarily on the machine running Claude Code.
 
 Release signing reads an optional, gitignored `keystore.properties` at the repo root
 (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`) — never commit a keystore or its
 credentials.
+
+## CI/CD
+
+Two workflows under `.github/workflows/`:
+
+- **`ci.yml`** — runs on every push to `master` and every pull request targeting `master`.
+  Two independent jobs, each its own status check on the PR: `test` (`./gradlew test`, the
+  73 JUnit tests, with the HTML report uploaded as a workflow artifact) and `build`
+  (`./gradlew assembleDebug`, a compile-only sanity check). A red check here is what used to
+  require asking Claude to run tests/build manually — it's now automatic and visible directly
+  on the PR/commit.
+
+- **`build-test-apk.yml`** — publishes a debug APK as a **GitHub Release** so invited
+  collaborators can install a test build on a phone without a local Android toolchain:
+  - On every push to `master`: builds and updates a single rolling release tagged
+    `latest-master` (same URL always has the newest build —
+    `https://github.com/KriRuo/game2048-android/releases/tag/latest-master`).
+  - On manual trigger (Actions tab → "Build test APK" → "Run workflow", optionally naming a
+    branch/PR ref): builds that ref and publishes a separate release tagged
+    `test-<ref>-<run#>`, so ad-hoc test builds don't clobber `latest-master`.
+  - Both releases are marked as debug/unsigned builds not meant for wider distribution.
+
+**Branch protection on `master`** (set up manually in Settings → Branches, not via a file in
+this repo): requires the `test` and `build` status checks from `ci.yml` to pass before a PR
+can be merged, and requires the branch to be up to date with `master` first. Admins are not
+blocked from bypassing it, so direct pushes to `master` (the workflow used so far in this
+repo's early history) still work.
+
+None of the above touches Play Store distribution — that's a separate, not-yet-built path
+(release keystore + `bundleRelease` + Play Developer API upload) discussed but not implemented.
 
 ## Architecture
 
