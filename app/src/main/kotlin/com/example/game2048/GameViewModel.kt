@@ -35,6 +35,7 @@ private const val KEY_SELECTED_GAME_MODE = "selected_game_mode"
 private const val KEY_GAMES_PLAYED = "games_played"
 private const val KEY_HIGHEST_TILE_EVER = "highest_tile_ever"
 private const val KEY_TOTAL_MERGES = "total_merges"
+private const val KEY_HAS_SEEN_WELCOME = "has_seen_welcome"
 
 /** Single-move undos allowed per game (see [GameViewModel.onUndo]). Intentionally *not*
  *  persisted across a process restart, along with the one-move [GameUiState.undoState] snapshot
@@ -122,7 +123,14 @@ data class GameUiState(
     /** Lifetime stats, never reset by New Game (see the "Your Stats" section of Customize). */
     val gamesPlayed: Int = 0,
     val highestTileEver: Int = 0,
-    val totalMerges: Long = 0L
+    val totalMerges: Long = 0L,
+    /** Whether the first-run "How to Play" walkthrough ([WelcomeDialog]) has already been
+     *  dismissed on this install. Defaults to `true` here so any ad-hoc [GameUiState] (e.g.
+     *  [freshGame]'s pre-[buildInitialState] value) never accidentally implies "show it" --
+     *  the real value is only ever read from [android.content.SharedPreferences] in
+     *  [buildInitialState]. [StartScreen] reads this once, on first composition, to decide
+     *  whether to auto-open the walkthrough. */
+    val hasSeenWelcome: Boolean = true
 )
 
 /**
@@ -467,6 +475,23 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    /** Called once the player dismisses [WelcomeDialog] (Skip or the final page's "Let's
+     *  play!"), so it never auto-shows again on this install. */
+    fun onWelcomeDismissed() {
+        prefs.edit().putBoolean(KEY_HAS_SEEN_WELCOME, true).commit()
+        _uiState.value = _uiState.value.copy(hasSeenWelcome = true)
+    }
+
+    /** Debug backdoor (tap the Start Screen's BEST chip 5x quickly): clears the "seen" flag
+     *  for [WelcomeDialog], same tap gesture as [onDebugJumpToLevel30] but on a different
+     *  chip/screen. Doesn't show the dialog itself -- force-stop and relaunch the app afterward
+     *  to see it auto-open exactly as it would for a real first-time install, without losing
+     *  any other progress the way clearing all app data would. */
+    fun onDebugResetWelcome() {
+        prefs.edit().putBoolean(KEY_HAS_SEEN_WELCOME, false).commit()
+        _uiState.value = _uiState.value.copy(hasSeenWelcome = false)
+    }
+
     /** Called when the player dismisses the "You Win" banner and wants to keep playing. */
     fun onContinuePastWin() {
         _uiState.value = _uiState.value.let { it.copy(game = it.game.copy(continuePastWin = true)) }
@@ -505,7 +530,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             gameMode = selectedGameMode,
             gamesPlayed = gamesPlayed,
             highestTileEver = highestTileEver,
-            totalMerges = totalMerges
+            totalMerges = totalMerges,
+            hasSeenWelcome = prefs.getBoolean(KEY_HAS_SEEN_WELCOME, false)
         )
     }
 

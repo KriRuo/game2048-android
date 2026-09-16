@@ -64,12 +64,19 @@ internal fun StartScreen(
     onSelectGameMode: (GameMode) -> Unit,
     onSelectPalette: (TilePalette) -> Unit,
     onSelectBoardSize: (BoardSizeOption) -> Unit,
-    onPlay: () -> Unit
+    onPlay: () -> Unit,
+    onWelcomeDismissed: () -> Unit,
+    onDebugResetWelcome: () -> Unit
 ) {
     val accent = LocalPaletteColors.current.accent
     var showThemePicker by remember { mutableStateOf(false) }
     var showBoardSizePicker by remember { mutableStateOf(false) }
     var showStats by remember { mutableStateOf(false) }
+    // Evaluated once, the first time this composable enters composition (i.e. once per real
+    // app launch, or whenever the player navigates back here from a game -- see
+    // GameUiState.hasSeenWelcome for why that's safe): auto-open the walkthrough exactly once
+    // per install. Re-openable any time after that via the "?" icon below.
+    var showWelcome by remember { mutableStateOf(!uiState.hasSeenWelcome) }
     // BoxWithConstraints, not a fixed-size flourish: sizing it (and the gaps around it) as a
     // fraction of whatever height is actually available is what makes this fit a real range of
     // screens/font scales without scrolling, rather than fitting only the one screen size this
@@ -105,7 +112,15 @@ internal fun StartScreen(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 ScoreChip(label = "LEVEL", value = uiState.level)
-                ScoreChip(label = "BEST", value = uiState.game.best)
+                ScoreChip(
+                    label = "BEST",
+                    value = uiState.game.best,
+                    // Debug backdoor: 5 quick taps resets the "seen" flag for WelcomeDialog so
+                    // it can be tested again without clearing app data -- see
+                    // GameViewModel.onDebugResetWelcome. Unrelated to onDebugJumpToLevel30's
+                    // same-shaped gesture on the in-game SCORE chip.
+                    onSecretTap = onDebugResetWelcome
+                )
             }
             if (uiState.currentStreak >= 1) {
                 Text(
@@ -133,6 +148,11 @@ internal fun StartScreen(
                     label = "📊",
                     contentDescription = "Stats",
                     onClick = { showStats = true }
+                )
+                StartScreenIconButton(
+                    label = "❓",
+                    contentDescription = "How to Play",
+                    onClick = { showWelcome = true }
                 )
             }
             Text(
@@ -198,6 +218,14 @@ internal fun StartScreen(
             highestTileEver = uiState.highestTileEver,
             totalMerges = uiState.totalMerges,
             onDismiss = { showStats = false }
+        )
+    }
+    if (showWelcome) {
+        WelcomeDialog(
+            onDismiss = {
+                showWelcome = false
+                onWelcomeDismissed()
+            }
         )
     }
 }

@@ -32,6 +32,13 @@ it's a deliberate before-you-play step, not a mid-game distraction):
 - **Board size icon** — shows the currently selected size (e.g. "8×8") and opens the size
   picker; updates live the moment you pick a different (unlocked) size.
 - **📊 Stats icon** — opens lifetime stats (games played, highest tile, total merges).
+- **❓ How to Play icon** — reopens the first-run walkthrough (below) any time.
+
+### First-run walkthrough
+A short, five-page "How to Play" carousel (goal & merging, Original vs. Extended, Jokers,
+Level/unlocks, and the customize icons/streaks) auto-opens once, the very first time the app
+is opened, and is otherwise skippable. It's reopenable any time afterward from the Start
+Screen's ❓ icon.
 
 ### Undo & Jokers (Extended mode)
 - **Undo** — revert the single most recent move, 3 uses per game.
@@ -52,7 +59,9 @@ it's a deliberate before-you-play step, not a mid-game distraction):
   — Cyber breaks from the others' single-hue ramp with a neon cyan → violet → magenta
   progression.
 - A debug shortcut (tap the score chip 5× quickly) jumps straight to Level 30, mainly to
-  reach Cyber/Mega without grinding.
+  reach Cyber/Mega without grinding. A second one, tapping the Start Screen's BEST chip 5×
+  quickly, resets the first-run walkthrough's "seen" flag so it can be tested again (force-stop
+  and relaunch to see it auto-open) without clearing app data.
 - **Daily streak** tracking (based on local calendar days, not UTC), with its own celebration
   banner the first time it crosses 3, 7, 14, 30, 50, 100, 200, or 365 days.
 - Lifetime stats shown via the Start Screen's Stats icon: games played, highest tile ever
@@ -95,6 +104,7 @@ app/
     ThemePickerDialog.kt                  - Palette picker (opened from StartScreen's Theme icon)
     BoardSizePickerDialog.kt               - Board size picker (opened from StartScreen's size icon)
     StatsDialog.kt                           - Lifetime stats (opened from StartScreen's Stats icon)
+    WelcomeDialog.kt                           - First-run "How to Play" walkthrough (opened from StartScreen's ? icon)
     GameViewModel.kt                          - Holds GameUiState, forwards swipes/Jokers to the engine, persists all state
     logic/GameLogic.kt                         - Pure game engine (tiles with stable ids, moves, merging, Jokers, win/lose)
     logic/BoardSizeOption.kt                    - Board size tiers (Classic/Big/Mega/Giant) and their unlock levels
