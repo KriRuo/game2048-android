@@ -20,12 +20,18 @@ modern, animated game feel.
 - Extended tile font sizing and color ramps that keep working cleanly all the way to
   4096/8192+ (not just 2048), so the bigger boards below don't flatten out visually.
 
-### Two rulesets
-A Start Screen (with an animated, glowing constellation flourish) lets you pick a mode before
-each play session; switching mid-game only changes which actions are exposed, it never
-touches the board in progress.
-- **Original** — classic 2048 rules: swipe only, no Undo, no Jokers.
-- **Extended** (default) — adds Undo and the five Jokers below.
+### Start Screen
+A Start Screen (with an animated, glowing constellation flourish) is the app's front door
+every time it opens, and is where all customization now lives (moved off the board screen so
+it's a deliberate before-you-play step, not a mid-game distraction):
+- **Mode picker** — Original vs. Extended; switching mid-game only changes which actions are
+  exposed, it never touches the board in progress.
+  - **Original** — classic 2048 rules: swipe only, no Undo, no Jokers.
+  - **Extended** (default) — adds Undo and the five Jokers below.
+- **🎨 Theme icon** — opens the palette picker.
+- **Board size icon** — shows the currently selected size (e.g. "8×8") and opens the size
+  picker; updates live the moment you pick a different (unlocked) size.
+- **📊 Stats icon** — opens lifetime stats (games played, highest tile, total merges).
 
 ### Undo & Jokers (Extended mode)
 - **Undo** — revert the single most recent move, 3 uses per game.
@@ -39,16 +45,18 @@ touches the board in progress.
 - **Player Level** — derived from cumulative score across every game ever played (a
   triangular XP curve, so early levels come quickly and later ones take longer); never resets
   when a board does.
-- **Board sizes**, unlocked by Level and selectable from Customize: Classic 4×4 (default),
-  Big 5×5 (Level 10), Mega 6×6 (Level 15), Giant 8×8 (Level 20).
-- **Color palettes**, unlocked by Level: Clay (default), Meadow (Level 3), Midnight (Level 6),
-  Berry (Level 10), and Cyber (Level 30) — Cyber breaks from the others' single-hue ramp with
-  a neon cyan → violet → magenta progression.
+- **Board sizes**, unlocked by Level and selectable from the Start Screen's board-size icon:
+  Classic 4×4 (default), Big 5×5 (Level 10), Mega 6×6 (Level 15), Giant 8×8 (Level 20).
+- **Color palettes**, unlocked by Level and selectable from the Start Screen's Theme icon:
+  Clay (default), Meadow (Level 3), Midnight (Level 6), Berry (Level 10), and Cyber (Level 30)
+  — Cyber breaks from the others' single-hue ramp with a neon cyan → violet → magenta
+  progression.
 - A debug shortcut (tap the score chip 5× quickly) jumps straight to Level 30, mainly to
   reach Cyber/Mega without grinding.
 - **Daily streak** tracking (based on local calendar days, not UTC), with its own celebration
   banner the first time it crosses 3, 7, 14, 30, 50, 100, 200, or 365 days.
-- Lifetime stats shown in Customize: games played, highest tile ever reached, and total merges.
+- Lifetime stats shown via the Start Screen's Stats icon: games played, highest tile ever
+  reached, and total merges.
 
 ### Layout & polish
 - Responsive portrait layout that fits on real device screens without scrolling, plus a
@@ -72,20 +80,30 @@ touches the board in progress.
 
 ## Project structure
 
+The Compose UI is split by concern rather than living in one file:
+
 ```
 app/
   src/main/kotlin/com/example/game2048/
-    MainActivity.kt              - Activity entry point
-    GameScreen.kt                 - Compose UI: Start Screen, board, animated tiles, swipe/tap gestures, overlays
-    GameViewModel.kt               - Holds GameUiState, forwards swipes/Jokers to the engine, persists all state
-    logic/GameLogic.kt             - Pure game engine (tiles with stable ids, moves, merging, Jokers, win/lose)
-    logic/BoardSizeOption.kt       - Board size tiers (Classic/Big/Mega/Giant) and their unlock levels
-    logic/LevelTracker.kt          - Cumulative-score → player Level curve
-    logic/StreakTracker.kt         - Daily streak state machine + milestone detection
-    logic/ThemeUnlocks.kt          - Tile color palette definitions and unlock levels
-    logic/GameStateSerializer.kt   - Encodes/decodes GameState for SharedPreferences persistence
-    ui/theme/                      - Compose Material3 theme: per-palette colors & typography
-  src/test/kotlin/.../logic/       - 73 JUnit tests across 6 files (engine, level, streak, unlocks, serialization)
+    MainActivity.kt                - Activity entry point
+    GameScreen.kt                   - App nav (Start vs. Game screen) + the in-game screen layout
+    StartScreen.kt                   - Landing screen: mode picker, customize icons, orbit flourish
+    GameChrome.kt                     - In-game Header (portrait) / Sidebar (landscape) + ScoreChip
+    GameBoardUi.kt                     - The board itself: tile grid, animated tiles, swipe gestures
+    JokerUi.kt                          - Joker aiming banner + bottom action bar
+    GameOverlays.kt                      - Combo popup, streak milestone banner, win/game-over overlay
+    ThemePickerDialog.kt                  - Palette picker (opened from StartScreen's Theme icon)
+    BoardSizePickerDialog.kt               - Board size picker (opened from StartScreen's size icon)
+    StatsDialog.kt                           - Lifetime stats (opened from StartScreen's Stats icon)
+    GameViewModel.kt                          - Holds GameUiState, forwards swipes/Jokers to the engine, persists all state
+    logic/GameLogic.kt                         - Pure game engine (tiles with stable ids, moves, merging, Jokers, win/lose)
+    logic/BoardSizeOption.kt                    - Board size tiers (Classic/Big/Mega/Giant) and their unlock levels
+    logic/LevelTracker.kt                        - Cumulative-score → player Level curve
+    logic/StreakTracker.kt                        - Daily streak state machine + milestone detection
+    logic/ThemeUnlocks.kt                          - Tile color palette definitions and unlock levels
+    logic/GameStateSerializer.kt                    - Encodes/decodes GameState for SharedPreferences persistence
+    ui/theme/                                        - Compose Material3 theme: per-palette colors & typography
+  src/test/kotlin/.../logic/                         - 73 JUnit tests across 6 files (engine, level, streak, unlocks, serialization)
 ```
 
 ## Opening the project
