@@ -24,9 +24,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -48,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.game2048.logic.BoardSizeOption
 import com.example.game2048.logic.GameMode
+import com.example.game2048.logic.LevelTracker
 import com.example.game2048.logic.TilePalette
 import com.example.game2048.ui.theme.LocalPaletteColors
 import kotlin.math.PI
@@ -66,7 +69,8 @@ internal fun StartScreen(
     onSelectBoardSize: (BoardSizeOption) -> Unit,
     onPlay: () -> Unit,
     onWelcomeDismissed: () -> Unit,
-    onDebugResetWelcome: () -> Unit
+    onDebugResetWelcome: () -> Unit,
+    onClaimDailyReward: () -> Unit
 ) {
     val accent = LocalPaletteColors.current.accent
     var showThemePicker by remember { mutableStateOf(false) }
@@ -77,6 +81,13 @@ internal fun StartScreen(
     // GameUiState.hasSeenWelcome for why that's safe): auto-open the walkthrough exactly once
     // per install. Re-openable any time after that via the "?" icon below.
     var showWelcome by remember { mutableStateOf(!uiState.hasSeenWelcome) }
+    // Only auto-opens immediately if Welcome isn't also about to show -- a brand-new install
+    // has both hasSeenWelcome == false and a pending reward (day 1 of the streak), and stacking
+    // two modals on first launch would be a mess. If Welcome is showing, its onDismiss below
+    // opens this one right after instead.
+    var showDailyReward by remember {
+        mutableStateOf(uiState.hasSeenWelcome && uiState.pendingDailyReward != null)
+    }
     // BoxWithConstraints, not a fixed-size flourish: sizing it (and the gaps around it) as a
     // fraction of whatever height is actually available is what makes this fit a real range of
     // screens/font scales without scrolling, rather than fitting only the one screen size this
@@ -130,6 +141,26 @@ internal fun StartScreen(
                     modifier = Modifier.padding(top = 6.dp)
                 )
             }
+            // Makes the LEVEL chip's number concrete: exactly how much of the current level's
+            // XP span is earned, and how much more the next level needs -- not just a bar.
+            val xp = LevelTracker.xpProgress(uiState.cumulativeScore)
+            LinearProgressIndicator(
+                progress = { uiState.levelProgress },
+                modifier = Modifier
+                    .padding(top = 10.dp)
+                    .width(140.dp)
+                    .height(5.dp)
+                    .clip(RoundedCornerShape(2.dp)),
+                color = accent,
+                trackColor = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.15f),
+                drawStopIndicator = {}
+            )
+            Text(
+                text = "${xp.earnedInLevel} / ${xp.spanForLevel} XP to Level ${uiState.level + 1}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+                modifier = Modifier.padding(top = 3.dp)
+            )
             Row(
                 modifier = Modifier.padding(top = 14.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -225,8 +256,22 @@ internal fun StartScreen(
             onDismiss = {
                 showWelcome = false
                 onWelcomeDismissed()
+                if (uiState.pendingDailyReward != null) showDailyReward = true
             }
         )
+    }
+    if (showDailyReward) {
+        val reward = uiState.pendingDailyReward
+        if (reward != null) {
+            DailyRewardDialog(
+                streakDay = uiState.currentStreak,
+                rewardXp = reward,
+                onClaim = {
+                    showDailyReward = false
+                    onClaimDailyReward()
+                }
+            )
+        }
     }
 }
 

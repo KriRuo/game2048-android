@@ -76,4 +76,23 @@ class StreakTrackerTest {
         val day3 = StreakTracker.onAppOpened(day2, todayEpochDay = 3)
         assertEquals(3, StreakTracker.newlyReachedMilestone(day2, day3))
     }
+
+    @Test
+    fun `dailyBonusXp grows with streak day`() {
+        assertEquals(15, StreakTracker.dailyBonusXp(1))
+        assertEquals(30, StreakTracker.dailyBonusXp(2))
+        assertEquals(75, StreakTracker.dailyBonusXp(5))
+    }
+
+    @Test
+    fun `dailyBonusXp caps at ten streak days`() {
+        val atCap = StreakTracker.dailyBonusXp(10)
+        assertEquals(atCap, StreakTracker.dailyBonusXp(11))
+        assertEquals(atCap, StreakTracker.dailyBonusXp(365))
+    }
+
+    @Test
+    fun `dailyBonusXp treats a non-positive streak day the same as day one`() {
+        assertEquals(StreakTracker.dailyBonusXp(1), StreakTracker.dailyBonusXp(0))
+    }
 }

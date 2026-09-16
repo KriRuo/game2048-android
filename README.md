@@ -17,6 +17,8 @@ modern, animated game feel.
   in-progress board (tiles, score, streak, level) is saved/restored across a full app kill.
 - Win banner at 2048 with an option to keep playing past it; both it and the game-over
   banner fade/scale in and out instead of snapping.
+- Tapping the in-game New Game button confirms first ("Start New Game?"), so an accidental tap
+  can't silently wipe out a board in progress; skipped once the game has already ended.
 - Extended tile font sizing and color ramps that keep working cleanly all the way to
   4096/8192+ (not just 2048), so the bigger boards below don't flatten out visually.
 
@@ -51,7 +53,8 @@ Screen's ❓ icon.
 ### Progression
 - **Player Level** — derived from cumulative score across every game ever played (a
   triangular XP curve, so early levels come quickly and later ones take longer); never resets
-  when a board does.
+  when a board does. The Start Screen shows exactly where you stand -- a progress bar plus
+  "1,234 / 2,000 XP to Level N" -- rather than just the Level number.
 - **Board sizes**, unlocked by Level and selectable from the Start Screen's board-size icon:
   Classic 4×4 (default), Big 5×5 (Level 10), Mega 6×6 (Level 15), Giant 8×8 (Level 20).
 - **Color palettes**, unlocked by Level and selectable from the Start Screen's Theme icon:
@@ -63,7 +66,9 @@ Screen's ❓ icon.
   quickly, resets the first-run walkthrough's "seen" flag so it can be tested again (force-stop
   and relaunch to see it auto-open) without clearing app data.
 - **Daily streak** tracking (based on local calendar days, not UTC), with its own celebration
-  banner the first time it crosses 3, 7, 14, 30, 50, 100, 200, or 365 days.
+  banner the first time it crosses 3, 7, 14, 30, 50, 100, 200, or 365 days -- and, every day the
+  streak advances, a claimable "Day N streak!" reward (bonus XP, scaling with streak length up
+  to a 10-day cap) shown right on the Start Screen so showing up daily visibly speeds up leveling.
 - Lifetime stats shown via the Start Screen's Stats icon: games played, highest tile ever
   reached, and total merges.
 
@@ -80,7 +85,7 @@ Screen's ❓ icon.
   animate individual tiles rather than snapping a raw value grid into place. Progression logic
   (`LevelTracker`, `StreakTracker`, `ThemeUnlocks`, `BoardSizeOption`) is similarly pure and
   independently unit tested.
-- 73 JUnit tests across 6 files under `app/src/test/kotlin/.../logic/` cover the engine
+- 78 JUnit tests across 6 files under `app/src/test/kotlin/.../logic/` cover the engine
   (including Jokers and board-size variants), level curve, streak transitions, theme/board-size
   unlock rules, and save-state (de)serialization.
 - Play Store upload-ready: real `applicationId` (`com.kriruo.game2048`), an optional release
@@ -105,6 +110,8 @@ app/
     BoardSizePickerDialog.kt               - Board size picker (opened from StartScreen's size icon)
     StatsDialog.kt                           - Lifetime stats (opened from StartScreen's Stats icon)
     WelcomeDialog.kt                           - First-run "How to Play" walkthrough (opened from StartScreen's ? icon)
+    DailyRewardDialog.kt                        - Claimable "Day N streak!" bonus-XP reward (opened from StartScreen)
+    ConfirmNewGameDialog.kt                      - "Start New Game?" confirmation (opened from the in-game New Game button)
     GameViewModel.kt                          - Holds GameUiState, forwards swipes/Jokers to the engine, persists all state
     logic/GameLogic.kt                         - Pure game engine (tiles with stable ids, moves, merging, Jokers, win/lose)
     logic/BoardSizeOption.kt                    - Board size tiers (Classic/Big/Mega/Giant) and their unlock levels
@@ -113,7 +120,7 @@ app/
     logic/ThemeUnlocks.kt                          - Tile color palette definitions and unlock levels
     logic/GameStateSerializer.kt                    - Encodes/decodes GameState for SharedPreferences persistence
     ui/theme/                                        - Compose Material3 theme: per-palette colors & typography
-  src/test/kotlin/.../logic/                         - 73 JUnit tests across 6 files (engine, level, streak, unlocks, serialization)
+  src/test/kotlin/.../logic/                         - 78 JUnit tests across 6 files (engine, level, streak, unlocks, serialization)
 ```
 
 ## Opening the project

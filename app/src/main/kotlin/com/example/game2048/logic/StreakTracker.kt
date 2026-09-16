@@ -19,7 +19,18 @@ data class StreakState(
 /** Milestones that get their own celebration the first time a streak reaches them. */
 val STREAK_MILESTONES = listOf(3, 7, 14, 30, 50, 100, 200, 365)
 
+/** XP granted per streak day toward [DAILY_BONUS_CAP_DAYS], see [StreakTracker.dailyBonusXp]. */
+private const val DAILY_BONUS_XP_PER_DAY = 15
+private const val DAILY_BONUS_CAP_DAYS = 10
+
 object StreakTracker {
+
+    /** Bonus XP for showing up on day [streakDay] of a streak (added to cumulative score once
+     *  claimed -- see [com.example.game2048.GameViewModel.onClaimDailyReward]). Grows with the
+     *  streak so a longer one feels increasingly worth protecting, capped at
+     *  [DAILY_BONUS_CAP_DAYS] days' worth so it doesn't outscale ordinary play at high streaks. */
+    fun dailyBonusXp(streakDay: Int): Int =
+        streakDay.coerceIn(1, DAILY_BONUS_CAP_DAYS) * DAILY_BONUS_XP_PER_DAY
 
     /**
      * Call once per app open. Returns the updated [StreakState] for [todayEpochDay]:

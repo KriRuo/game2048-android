@@ -72,4 +72,20 @@ class LevelTrackerTest {
         assertTrue(progress >= 0f)
         assertTrue(progress <= 1f)
     }
+
+    @Test
+    fun `xpProgress is zero earned with the full span right at the start of a level`() {
+        val threshold = LevelTracker.scoreRequiredForLevel(6)
+        val span = LevelTracker.scoreRequiredForLevel(7) - threshold
+        val progress = LevelTracker.xpProgress(threshold)
+        assertEquals(0L, progress.earnedInLevel)
+        assertEquals(span, progress.spanForLevel)
+    }
+
+    @Test
+    fun `xpProgress earned matches how far past the current level's threshold the score is`() {
+        val threshold = LevelTracker.scoreRequiredForLevel(4)
+        val progress = LevelTracker.xpProgress(threshold + 37)
+        assertEquals(37L, progress.earnedInLevel)
+    }
 }

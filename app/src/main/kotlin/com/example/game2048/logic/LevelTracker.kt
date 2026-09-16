@@ -35,4 +35,19 @@ object LevelTracker {
         if (span <= 0) return 1f
         return ((cumulativeScore - currentThreshold).toFloat() / span).coerceIn(0f, 1f)
     }
+
+    /** The same numbers [progressToNextLevel] turns into a fraction, exposed raw so the UI can
+     *  show "1,234 / 2,000 XP" rather than just a bar -- see [LevelXpProgress]. */
+    fun xpProgress(cumulativeScore: Long): LevelXpProgress {
+        val level = levelForCumulativeScore(cumulativeScore)
+        val currentThreshold = scoreRequiredForLevel(level)
+        val nextThreshold = scoreRequiredForLevel(level + 1)
+        return LevelXpProgress(
+            earnedInLevel = cumulativeScore - currentThreshold,
+            spanForLevel = nextThreshold - currentThreshold
+        )
+    }
 }
+
+/** How much of the current level's XP span (see [LevelTracker.xpProgress]) has been earned. */
+data class LevelXpProgress(val earnedInLevel: Long, val spanForLevel: Long)

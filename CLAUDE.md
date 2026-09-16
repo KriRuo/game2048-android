@@ -67,9 +67,19 @@ one piece of the visual/interaction surface: `MainActivity` (entry point) → `G
 points) / `GameChrome` (header/sidebar + score chip) / `GameBoardUi` (grid, animated tiles,
 swipe gestures) / `JokerUi` (aiming banner + action bar) / `GameOverlays` (combo popup, streak
 banner, win/game-over overlay), with `ThemePickerDialog`, `BoardSizePickerDialog`,
-`StatsDialog`, and `WelcomeDialog` (first-run "How to Play" walkthrough) as the picker/info
-dialogs opened from `StartScreen`. `ui/theme/` holds the Material3 theme wiring (colors per
-palette, typography).
+`StatsDialog`, `WelcomeDialog` (first-run "How to Play" walkthrough), and `DailyRewardDialog`
+(claimable streak bonus-XP) as the picker/info dialogs opened from `StartScreen`, plus
+`ConfirmNewGameDialog` opened from the in-game New Game button. `ui/theme/` holds the Material3
+theme wiring (colors per palette, typography).
+
+**Streaks and Levels are directly connected**: `StreakTracker.dailyBonusXp(streakDay)` (pure,
+capped at 10 days' worth) is added straight to cumulative score via
+`GameViewModel.onClaimDailyReward()` once the player confirms `DailyRewardDialog` -- computed
+once per new streak day in `buildInitialState()` and never recomputed, so an unclaimed reward is
+simply gone if the app closes first rather than persisting or stacking (same reasoning as
+`MAX_UNDOS` not surviving a process restart). `LevelTracker.xpProgress(cumulativeScore)` exposes
+the raw earned/span numbers (not just the `levelProgress` fraction) for the Start Screen's
+"X / Y XP to Level N" display.
 
 ## Local machine notes
 

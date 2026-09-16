@@ -85,6 +85,10 @@ data class GameUiState(
     val level: Int = 1,
     /** Progress toward the next level, in [0f, 1f), for a progress bar. */
     val levelProgress: Float = 0f,
+    /** The raw cumulative score [level]/[levelProgress] are derived from, exposed so the UI can
+     *  show actual numbers ("1,234 / 2,000 XP") via [LevelTracker.xpProgress] instead of just a
+     *  bar -- see [StartScreen] and [Header]/[Sidebar]. */
+    val cumulativeScore: Long = 0L,
     /** The level at the moment the current board started, so the game-over screen can tell
      *  whether this run leveled the player up. */
     val levelAtGameStart: Int = 1,
@@ -130,7 +134,14 @@ data class GameUiState(
      *  the real value is only ever read from [android.content.SharedPreferences] in
      *  [buildInitialState]. [StartScreen] reads this once, on first composition, to decide
      *  whether to auto-open the walkthrough. */
-    val hasSeenWelcome: Boolean = true
+    val hasSeenWelcome: Boolean = true,
+    /** Bonus XP waiting to be claimed via [GameViewModel.onClaimDailyReward] for showing up
+     *  today, or null if there's nothing pending -- see [DailyRewardDialog]. Set once, in
+     *  [GameViewModel.buildInitialState], the moment [currentStreak] advances to a new day;
+     *  never recomputed afterward, so claiming it (or simply not claiming it before the app is
+     *  next closed) is final for that day -- same not-a-big-deal-either-way reasoning as
+     *  [MAX_UNDOS] not surviving a process restart. */
+    val pendingDailyReward: Int? = null
 )
 
 /**
@@ -178,6 +189,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 moveToken = current.moveToken + 1,
                 level = LevelTracker.levelForCumulativeScore(cumulativeScore),
                 levelProgress = LevelTracker.progressToNextLevel(cumulativeScore),
+                cumulativeScore = cumulativeScore,
                 undoState = current.game,
                 highestTileEver = highestTileEver,
                 totalMerges = totalMerges
@@ -213,6 +225,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             moveToken = current.moveToken + 1,
             level = LevelTracker.levelForCumulativeScore(cumulativeScore),
             levelProgress = LevelTracker.progressToNextLevel(cumulativeScore),
+            cumulativeScore = cumulativeScore,
             undoState = null,
             undosRemaining = current.undosRemaining - 1
         )
@@ -226,6 +239,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val fresh = freshGame(best = bestScore, boardSize = boardSize).copy(
             level = level,
             levelProgress = current.levelProgress,
+            cumulativeScore = cumulativeScore,
             levelAtGameStart = level,
             selectedPalette = selectedPalette,
             selectedBoardSize = selectedBoardSize,
@@ -449,6 +463,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             moveToken = current.moveToken + 1,
             level = LevelTracker.levelForCumulativeScore(cumulativeScore),
             levelProgress = LevelTracker.progressToNextLevel(cumulativeScore),
+            cumulativeScore = cumulativeScore,
             undoState = current.game,
             activeJoker = null,
             jokerFirstTileId = null,
@@ -471,6 +486,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = _uiState.value.copy(
             level = level,
             levelProgress = LevelTracker.progressToNextLevel(cumulativeScore),
+            cumulativeScore = cumulativeScore,
             levelAtGameStart = level
         )
     }
@@ -490,6 +506,25 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun onDebugResetWelcome() {
         prefs.edit().putBoolean(KEY_HAS_SEEN_WELCOME, false).commit()
         _uiState.value = _uiState.value.copy(hasSeenWelcome = false)
+    }
+
+    /** Grants [GameUiState.pendingDailyReward] (see [DailyRewardDialog]) and clears it. No-op
+     *  if there's nothing pending -- safe to call from a dialog's dismiss path as well as its
+     *  confirm button. Also bumps [GameUiState.levelAtGameStart] so a reward that happens to
+     *  cross a level boundary isn't later misattributed to the board in progress on the
+     *  game-over screen. */
+    fun onClaimDailyReward() {
+        val reward = _uiState.value.pendingDailyReward ?: return
+        cumulativeScore += reward
+        prefs.edit().putLong(KEY_CUMULATIVE_SCORE, cumulativeScore).commit()
+        val level = LevelTracker.levelForCumulativeScore(cumulativeScore)
+        _uiState.value = _uiState.value.copy(
+            pendingDailyReward = null,
+            level = level,
+            levelProgress = LevelTracker.progressToNextLevel(cumulativeScore),
+            cumulativeScore = cumulativeScore,
+            levelAtGameStart = level
+        )
     }
 
     /** Called when the player dismisses the "You Win" banner and wants to keep playing. */
@@ -517,6 +552,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val updatedStreak = StreakTracker.onAppOpened(previousStreak, todayEpochDay())
         val milestone = StreakTracker.newlyReachedMilestone(previousStreak, updatedStreak)
         saveStreak(updatedStreak)
+        // A new day was just recorded (as opposed to this being a same-day reopen, where
+        // onAppOpened leaves lastPlayedEpochDay unchanged) -- offer today's claimable reward.
+        // Computed once here and never recomputed afterward: if the app is closed before it's
+        // claimed, it's simply gone rather than reappearing later that day or piling up --
+        // same not-a-big-deal reasoning as [MAX_UNDOS] not surviving a restart.
+        val justAdvancedStreak = previousStreak == StreakState.NONE ||
+            updatedStreak.lastPlayedEpochDay != previousStreak.lastPlayedEpochDay
+        val pendingReward = if (justAdvancedStreak) StreakTracker.dailyBonusXp(updatedStreak.current) else null
         val level = LevelTracker.levelForCumulativeScore(cumulativeScore)
         return base.copy(
             currentStreak = updatedStreak.current,
@@ -524,6 +567,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             justReachedMilestone = milestone,
             level = level,
             levelProgress = LevelTracker.progressToNextLevel(cumulativeScore),
+            cumulativeScore = cumulativeScore,
             levelAtGameStart = level,
             selectedPalette = selectedPalette,
             selectedBoardSize = selectedBoardSize,
@@ -531,7 +575,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             gamesPlayed = gamesPlayed,
             highestTileEver = highestTileEver,
             totalMerges = totalMerges,
-            hasSeenWelcome = prefs.getBoolean(KEY_HAS_SEEN_WELCOME, false)
+            hasSeenWelcome = prefs.getBoolean(KEY_HAS_SEEN_WELCOME, false),
+            pendingDailyReward = pendingReward
         )
     }
 
