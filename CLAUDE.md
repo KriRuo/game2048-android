@@ -62,6 +62,31 @@ repo's early history) still work.
   to). This is prep for eventual Play Store upload automation (Play Developer API), not that
   automation itself.
 
+### Play Store rollout — where to pick up
+
+A release keystore already exists (generated once, delivered to KriRuo directly — not in this
+repo or its history) and `release-build.yml` can already turn it into a signed `.aab`. What's
+left, roughly in order:
+
+**KriRuo (account/human side, can't be done from a session):**
+1. Back up `game2048-release.jks` + its passwords outside GitHub, if not already done.
+2. Add the 4 `RELEASE_KEYSTORE_*`/`RELEASE_KEY_*` secrets under Settings → Secrets and
+   variables → Actions, if not already done (the `release-build.yml` workflow will fail
+   without them — check that first if it's red).
+3. Create the Google Play Console account ($25, identity verification).
+4. Store listing requirements: privacy policy URL, app icon/feature graphic/screenshots,
+   content rating questionnaire, data safety form (likely "no data collected" — everything is
+   local `SharedPreferences`).
+5. First `.aab` upload to Play Console must be manual (Google requires this before any API
+   automation can target that app listing) — grab the artifact from a `release-build.yml` run.
+
+**Next technical step once an app exists in Play Console:**
+- Automate versionCode bumping (currently hardcoded `versionCode = 1` / `versionName = "1.0"`
+  in `app/build.gradle.kts` — Play requires a strictly increasing versionCode per upload).
+- Add Play Developer API upload to CI (e.g. `r0adkll/upload-google-play` action) using a
+  service-account JSON key, targeting the **internal testing track** first (no review wait,
+  good for KriRuo's invited testers) before ever touching `production`.
+
 ## Architecture
 
 **Engine/UI split is the core design decision.** `logic/GameLogic.kt` (`Game2048Engine`) is a
