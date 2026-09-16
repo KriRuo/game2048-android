@@ -14,7 +14,7 @@ import androidx.compose.runtime.Composable
 internal fun ConfirmNewGameDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Start New Game?") },
+        title = { Text("Start fresh?") },
         text = { Text("This will end your current game and reset the board.") },
         confirmButton = {
             TextButton(onClick = onConfirm) { Text("New Game") }

@@ -135,7 +135,7 @@ internal fun StartScreen(
             }
             if (uiState.currentStreak >= 1) {
                 Text(
-                    text = "🔥 ${uiState.currentStreak}-day streak",
+                    text = streakGreeting(uiState.currentStreak, uiState.longestStreak),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
                     modifier = Modifier.padding(top = 6.dp)
@@ -443,4 +443,18 @@ private fun StartModeCard(mode: GameMode, selected: Boolean, onClick: () -> Unit
 private fun modeDescription(mode: GameMode): String = when (mode) {
     GameMode.ORIGINAL -> "Classic rules: swipe to move, no Undo, no Jokers."
     GameMode.EXTENDED -> "Adds Undo plus the Teleport, Swap, Rotate, Double, and Bomb Jokers."
+}
+
+/** The streak badge's text, scaled by [currentStreak] the same way [DailyRewardDialog]'s copy
+ *  is -- both trace back to [StreakTracker.dailyBonusXp]'s tiers, so the tone escalates in step
+ *  with the actual reward rather than the two places drifting apart. [longestStreak] alone
+ *  tells "day 1" apart from a *restart* after a broken streak (current reset to 1 but longest
+ *  is still > 1) without needing any extra persisted state -- see
+ *  [GameViewModel.buildInitialState]'s streak handling for why that distinction is free here. */
+private fun streakGreeting(currentStreak: Int, longestStreak: Int): String = when {
+    currentStreak <= 1 && longestStreak > 1 -> "🔥 Day 1 — new streak, let's go."
+    currentStreak <= 1 -> "🔥 Day 1 streak"
+    currentStreak < 7 -> "🔥 Day $currentStreak — back already? Look at you."
+    currentStreak < 30 -> "🔥 Day $currentStreak — you're not stopping, huh?"
+    else -> "🔥 Day $currentStreak — absolutely unstoppable."
 }

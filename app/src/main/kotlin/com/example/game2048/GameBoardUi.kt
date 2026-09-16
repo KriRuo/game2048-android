@@ -135,7 +135,7 @@ internal fun BoardArea(
                     exit = fadeOut(tween(120))
                 ) {
                     GameOverlay(
-                        title = "Game Over",
+                        title = "Out of moves",
                         // Goes home rather than starting a new game directly: game-over is one
                         // of the two moments (the other is the Home icon) where the player is
                         // meant to reconsider Original vs. Extended, per StartScreen.
@@ -163,7 +163,7 @@ internal fun BoardArea(
                         )
                         if (uiState.level > uiState.levelAtGameStart) {
                             Text(
-                                text = "🎉 Leveled up!",
+                                text = "🎉 Look at you go.",
                                 modifier = Modifier.padding(top = 10.dp),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
@@ -172,7 +172,7 @@ internal fun BoardArea(
                         }
                         ThemeUnlocks.newlyUnlocked(uiState.levelAtGameStart, uiState.level)?.let { unlocked ->
                             Text(
-                                text = "🎨 New theme unlocked: ${unlocked.displayName}!",
+                                text = "🎨 ${unlocked.displayName} is yours now.",
                                 modifier = Modifier.padding(top = 10.dp),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
@@ -181,7 +181,7 @@ internal fun BoardArea(
                         }
                         BoardSizeUnlocks.newlyUnlocked(uiState.levelAtGameStart, uiState.level)?.let { unlocked ->
                             Text(
-                                text = "📐 ${unlocked.displayName} unlocked! Select it from Customize.",
+                                text = "📐 ${unlocked.displayName} unlocked — pick it from the Start Screen.",
                                 modifier = Modifier.padding(top = 10.dp),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
@@ -198,7 +198,7 @@ internal fun BoardArea(
                     exit = fadeOut(tween(120))
                 ) {
                     GameOverlay(
-                        title = "You made 2048!",
+                        title = "2048. Look at you.",
                         buttonLabel = "Keep Going",
                         onButtonClick = viewModel::onContinuePastWin
                     )
