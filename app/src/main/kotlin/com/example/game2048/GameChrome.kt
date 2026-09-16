@@ -12,7 +12,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -42,14 +41,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.game2048.logic.BoardSizeOption
-import com.example.game2048.logic.TilePalette
 import com.example.game2048.ui.theme.LocalPaletteColors
 import kotlinx.coroutines.delay
 
 private const val SCORE_POPUP_LIFETIME_MS = 700L
 
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun Header(
     score: Int,
@@ -59,19 +55,11 @@ internal fun Header(
     currentStreak: Int,
     level: Int,
     levelProgress: Float,
-    selectedPalette: TilePalette,
-    selectedBoardSize: BoardSizeOption,
-    gamesPlayed: Int,
-    highestTileEver: Int,
-    totalMerges: Long,
     onNewGame: () -> Unit,
-    onSelectPalette: (TilePalette) -> Unit,
-    onSelectBoardSize: (BoardSizeOption) -> Unit,
     onDebugJumpToLevel30: () -> Unit,
     onNavigateHome: () -> Unit
 ) {
     val accent = LocalPaletteColors.current.accent
-    var showThemePicker by remember { mutableStateOf(false) }
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -135,28 +123,12 @@ internal fun Header(
         }
     }
 
-    // Customize/Undo are icon-only (secondary actions); New Game keeps its full label as the
-    // primary action. Narrow enough that all three reliably fit one line even on a dense phone
-    // -- a real Samsung previously squeezed "New Game" so hard its Text wrapped letter-by-letter
-    // when all three were full-width buttons. FlowRow (wraps a whole button to a new line rather
-    // than letting an individual one collapse) and maxLines = 1 (hard guarantee against that
-    // specific failure) are kept as a safety net regardless.
-    FlowRow(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 14.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp, alignment = Alignment.End),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        horizontalArrangement = Arrangement.End
     ) {
-        OutlinedButton(
-            onClick = { showThemePicker = true },
-            shape = RoundedCornerShape(10.dp),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = accent),
-            contentPadding = PaddingValues(12.dp),
-            modifier = Modifier.semantics { contentDescription = "Customize" }
-        ) {
-            Text("🎨", fontSize = 18.sp, maxLines = 1)
-        }
         OutlinedButton(
             onClick = onNewGame,
             shape = RoundedCornerShape(10.dp),
@@ -164,23 +136,6 @@ internal fun Header(
         ) {
             Text("New Game", fontWeight = FontWeight.SemiBold, maxLines = 1)
         }
-    }
-
-    if (showThemePicker) {
-        ThemePickerDialog(
-            currentPalette = selectedPalette,
-            level = level,
-            selectedBoardSize = selectedBoardSize,
-            gamesPlayed = gamesPlayed,
-            highestTileEver = highestTileEver,
-            totalMerges = totalMerges,
-            onSelect = {
-                onSelectPalette(it)
-                showThemePicker = false
-            },
-            onSelectBoardSize = onSelectBoardSize,
-            onDismiss = { showThemePicker = false }
-        )
     }
 }
 
@@ -196,20 +151,12 @@ internal fun Sidebar(
     currentStreak: Int,
     level: Int,
     levelProgress: Float,
-    selectedPalette: TilePalette,
-    selectedBoardSize: BoardSizeOption,
-    gamesPlayed: Int,
-    highestTileEver: Int,
-    totalMerges: Long,
     onNewGame: () -> Unit,
-    onSelectPalette: (TilePalette) -> Unit,
-    onSelectBoardSize: (BoardSizeOption) -> Unit,
     onDebugJumpToLevel30: () -> Unit,
     onNavigateHome: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val accent = LocalPaletteColors.current.accent
-    var showThemePicker by remember { mutableStateOf(false) }
 
     // fillMaxHeight + verticalScroll: three buttons plus the wordmark/level/streak/scores no
     // longer reliably fit a short landscape screen's height (the row that added Undo was the
@@ -276,15 +223,6 @@ internal fun Sidebar(
 
         Spacer(modifier = Modifier.height(24.dp))
         OutlinedButton(
-            onClick = { showThemePicker = true },
-            shape = RoundedCornerShape(10.dp),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = accent),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("🎨 Customize", fontWeight = FontWeight.SemiBold, maxLines = 1)
-        }
-        Spacer(modifier = Modifier.height(10.dp))
-        OutlinedButton(
             onClick = onNewGame,
             shape = RoundedCornerShape(10.dp),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = accent),
@@ -292,23 +230,6 @@ internal fun Sidebar(
         ) {
             Text("New Game", fontWeight = FontWeight.SemiBold, maxLines = 1)
         }
-    }
-
-    if (showThemePicker) {
-        ThemePickerDialog(
-            currentPalette = selectedPalette,
-            level = level,
-            selectedBoardSize = selectedBoardSize,
-            gamesPlayed = gamesPlayed,
-            highestTileEver = highestTileEver,
-            totalMerges = totalMerges,
-            onSelect = {
-                onSelectPalette(it)
-                showThemePicker = false
-            },
-            onSelectBoardSize = onSelectBoardSize,
-            onDismiss = { showThemePicker = false }
-        )
     }
 }
 
