@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -65,6 +66,14 @@ fun Game2048App(viewModel: GameViewModel = viewModel()) {
 @Composable
 fun GameScreen(viewModel: GameViewModel = viewModel(), onNavigateHome: () -> Unit) {
     val uiState by viewModel.uiState.collectAsState()
+    // Guards the persistent New Game button (Header/Sidebar) against a stray tap wiping a
+    // board in progress -- see ConfirmNewGameDialog. Skipped once the game has already ended
+    // (isGameOver below): there's nothing left to lose at that point, so confirming would just
+    // be friction on the one moment New Game is actually meant to be reached for quickly.
+    var showConfirmNewGame by remember { mutableStateOf(false) }
+    val onNewGameRequested = {
+        if (uiState.game.isGameOver) viewModel.onNewGame() else showConfirmNewGame = true
+    }
 
     // Landscape gets its own layout (sidebar + board side by side) rather than reusing the
     // portrait Column: stacking the header above the board there left only a short sliver of
@@ -89,7 +98,7 @@ fun GameScreen(viewModel: GameViewModel = viewModel(), onNavigateHome: () -> Uni
                     currentStreak = uiState.currentStreak,
                     level = uiState.level,
                     levelProgress = uiState.levelProgress,
-                    onNewGame = viewModel::onNewGame,
+                    onNewGame = onNewGameRequested,
                     onDebugJumpToLevel30 = viewModel::onDebugJumpToLevel30,
                     onNavigateHome = onNavigateHome,
                     modifier = Modifier.padding(end = 24.dp)
@@ -116,7 +125,7 @@ fun GameScreen(viewModel: GameViewModel = viewModel(), onNavigateHome: () -> Uni
                     currentStreak = uiState.currentStreak,
                     level = uiState.level,
                     levelProgress = uiState.levelProgress,
-                    onNewGame = viewModel::onNewGame,
+                    onNewGame = onNewGameRequested,
                     onDebugJumpToLevel30 = viewModel::onDebugJumpToLevel30,
                     onNavigateHome = onNavigateHome
                 )
@@ -131,5 +140,15 @@ fun GameScreen(viewModel: GameViewModel = viewModel(), onNavigateHome: () -> Uni
                 )
             }
         }
+    }
+
+    if (showConfirmNewGame) {
+        ConfirmNewGameDialog(
+            onConfirm = {
+                showConfirmNewGame = false
+                viewModel.onNewGame()
+            },
+            onDismiss = { showConfirmNewGame = false }
+        )
     }
 }
