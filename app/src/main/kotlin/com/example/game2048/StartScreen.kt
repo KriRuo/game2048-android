@@ -14,6 +14,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -31,17 +32,23 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.game2048.logic.BoardSizeOption
 import com.example.game2048.logic.GameMode
+import com.example.game2048.logic.TilePalette
 import com.example.game2048.ui.theme.LocalPaletteColors
 import kotlin.math.PI
 import kotlin.math.cos
@@ -55,9 +62,14 @@ import kotlin.math.sqrt
 internal fun StartScreen(
     uiState: GameUiState,
     onSelectGameMode: (GameMode) -> Unit,
+    onSelectPalette: (TilePalette) -> Unit,
+    onSelectBoardSize: (BoardSizeOption) -> Unit,
     onPlay: () -> Unit
 ) {
     val accent = LocalPaletteColors.current.accent
+    var showThemePicker by remember { mutableStateOf(false) }
+    var showBoardSizePicker by remember { mutableStateOf(false) }
+    var showStats by remember { mutableStateOf(false) }
     // BoxWithConstraints, not a fixed-size flourish: sizing it (and the gaps around it) as a
     // fraction of whatever height is actually available is what makes this fit a real range of
     // screens/font scales without scrolling, rather than fitting only the one screen size this
@@ -103,6 +115,26 @@ internal fun StartScreen(
                     modifier = Modifier.padding(top = 6.dp)
                 )
             }
+            Row(
+                modifier = Modifier.padding(top = 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                StartScreenIconButton(
+                    label = "🎨",
+                    contentDescription = "Theme",
+                    onClick = { showThemePicker = true }
+                )
+                StartScreenIconButton(
+                    label = "${uiState.selectedBoardSize.size}×${uiState.selectedBoardSize.size}",
+                    contentDescription = "Board size",
+                    onClick = { showBoardSizePicker = true }
+                )
+                StartScreenIconButton(
+                    label = "📊",
+                    contentDescription = "Stats",
+                    onClick = { showStats = true }
+                )
+            }
             Text(
                 text = "CHOOSE HOW YOU WANT TO PLAY",
                 style = MaterialTheme.typography.titleSmall,
@@ -142,6 +174,48 @@ internal fun StartScreen(
                 )
             }
         }
+    }
+
+    if (showThemePicker) {
+        ThemePickerDialog(
+            currentPalette = uiState.selectedPalette,
+            level = uiState.level,
+            onSelect = onSelectPalette,
+            onDismiss = { showThemePicker = false }
+        )
+    }
+    if (showBoardSizePicker) {
+        BoardSizePickerDialog(
+            selectedBoardSize = uiState.selectedBoardSize,
+            level = uiState.level,
+            onSelect = onSelectBoardSize,
+            onDismiss = { showBoardSizePicker = false }
+        )
+    }
+    if (showStats) {
+        StatsDialog(
+            gamesPlayed = uiState.gamesPlayed,
+            highestTileEver = uiState.highestTileEver,
+            totalMerges = uiState.totalMerges,
+            onDismiss = { showStats = false }
+        )
+    }
+}
+
+/** One of the three customize entry points on [StartScreen] (theme / board size / stats) --
+ *  a small outlined icon button, matching the style [Header]/[Sidebar] used for their icon-only
+ *  actions. [label] is either a single emoji or, for the board-size button, the currently
+ *  selected size (e.g. "8×8") so the active choice is visible without opening the picker. */
+@Composable
+private fun StartScreenIconButton(label: String, contentDescription: String, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        shape = RoundedCornerShape(10.dp),
+        colors = ButtonDefaults.outlinedButtonColors(contentColor = LocalPaletteColors.current.accent),
+        contentPadding = PaddingValues(12.dp),
+        modifier = Modifier.semantics { this.contentDescription = contentDescription }
+    ) {
+        Text(label, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1)
     }
 }
 

@@ -46,6 +46,8 @@ fun Game2048App(viewModel: GameViewModel = viewModel()) {
         AppScreen.START -> StartScreen(
             uiState = uiState,
             onSelectGameMode = viewModel::onSelectGameMode,
+            onSelectPalette = viewModel::onSelectPalette,
+            onSelectBoardSize = viewModel::onSelectBoardSize,
             onPlay = {
                 // A game-over board can't be "resumed" -- start fresh in whichever mode was
                 // just picked. An in-progress (or brand new, unplayed) board is left alone so
