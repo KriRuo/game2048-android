@@ -6,38 +6,86 @@ modern, animated game feel.
 
 ## Features
 
-- Swipe up/down/left/right to slide and merge tiles on a 4x4 board.
+### Core gameplay
+- Swipe up/down/left/right to slide and merge tiles.
 - Every tile is individually animated: tiles slide smoothly to their new cell, a merge pops
   with a quick bounce, and a freshly spawned tile fades/scales in with a springy overshoot.
 - A subtle "shake" + haptic tick when you swipe into a wall and nothing can move; a distinct,
   slightly stronger haptic tick on a merge vs. a plain slide.
 - A floating "+N" score popup on the score chip whenever you gain points.
-- Score and best-score tracking; best score persists across app restarts (`SharedPreferences`).
+- Score and best-score tracking; best score persists across app restarts, and the whole
+  in-progress board (tiles, score, streak, level) is saved/restored across a full app kill.
 - Win banner at 2048 with an option to keep playing past it; both it and the game-over
   banner fade/scale in and out instead of snapping.
-- Warm, restrained "Claude"-style palette: cream paper background, a clay/terracotta accent
-  (`ClaudeAccent`, `#D97757`) for the wordmark and buttons, and a tile color ramp that warms
-  from soft cream up through clay to a deep terracotta at 2048+, in both light and dark mode.
+- Extended tile font sizing and color ramps that keep working cleanly all the way to
+  4096/8192+ (not just 2048), so the bigger boards below don't flatten out visually.
+
+### Two rulesets
+A Start Screen (with an animated, glowing constellation flourish) lets you pick a mode before
+each play session; switching mid-game only changes which actions are exposed, it never
+touches the board in progress.
+- **Original** — classic 2048 rules: swipe only, no Undo, no Jokers.
+- **Extended** (default) — adds Undo and the five Jokers below.
+
+### Undo & Jokers (Extended mode)
+- **Undo** — revert the single most recent move, 3 uses per game.
+- **Teleport** (2/game) — tap a tile, then tap an empty cell to move it there.
+- **Swap** (2/game) — tap two tiles to exchange their positions.
+- **Bomb** (2/game) — tap a tile to remove it outright.
+- **Double** (2/game) — tap a tile to double its value in place (scored like a merge).
+- **Rotate** (2/game) — rotate the whole board 90° clockwise instantly, no target needed.
+
+### Progression
+- **Player Level** — derived from cumulative score across every game ever played (a
+  triangular XP curve, so early levels come quickly and later ones take longer); never resets
+  when a board does.
+- **Board sizes**, unlocked by Level and selectable from Customize: Classic 4×4 (default),
+  Big 5×5 (Level 10), Mega 6×6 (Level 15), Giant 8×8 (Level 20).
+- **Color palettes**, unlocked by Level: Clay (default), Meadow (Level 3), Midnight (Level 6),
+  Berry (Level 10), and Cyber (Level 30) — Cyber breaks from the others' single-hue ramp with
+  a neon cyan → violet → magenta progression.
+- A debug shortcut (tap the score chip 5× quickly) jumps straight to Level 30, mainly to
+  reach Cyber/Mega without grinding.
+- **Daily streak** tracking (based on local calendar days, not UTC), with its own celebration
+  banner the first time it crosses 3, 7, 14, 30, 50, 100, 200, or 365 days.
+- Lifetime stats shown in Customize: games played, highest tile ever reached, and total merges.
+
+### Layout & polish
+- Responsive portrait layout that fits on real device screens without scrolling, plus a
+  dedicated landscape layout (sidebar + board side by side) rather than a stretched portrait one.
+- Warm, restrained "Claude"-style visual language across every palette: a clay/terracotta
+  accent (`ClaudeAccent`, `#D97757`) in the default Clay palette, consistent in both light and
+  dark mode.
+
+### Under the hood
 - Game logic is a pure, dependency-free `Game2048Engine` (in `logic/GameLogic.kt`) that
-  tracks a stable id per tile through every slide and merge, so the UI can animate individual
-  tiles rather than snapping a raw value grid into place. Unit tested in
-  `app/src/test/kotlin/.../Game2048EngineTest.kt`. The algorithm (including the id-tracking
-  through merges) was additionally cross-checked against an independent Python
-  re-implementation -- known board/merge cases, plus 500 randomized-game invariant
-  simulations -- before being trusted here, since this project was assembled in a sandbox
-  without an Android SDK to compile and run the Kotlin directly.
+  tracks a stable id per tile through every slide, merge, and Joker action, so the UI can
+  animate individual tiles rather than snapping a raw value grid into place. Progression logic
+  (`LevelTracker`, `StreakTracker`, `ThemeUnlocks`, `BoardSizeOption`) is similarly pure and
+  independently unit tested.
+- 73 JUnit tests across 6 files under `app/src/test/kotlin/.../logic/` cover the engine
+  (including Jokers and board-size variants), level curve, streak transitions, theme/board-size
+  unlock rules, and save-state (de)serialization.
+- Play Store upload-ready: real `applicationId` (`com.kriruo.game2048`), an optional release
+  signing config read from a gitignored `keystore.properties`, and R8 minification/resource
+  shrinking enabled for release builds.
 
 ## Project structure
 
 ```
 app/
   src/main/kotlin/com/example/game2048/
-    MainActivity.kt          - Activity entry point
-    GameScreen.kt             - Compose UI: board, animated tiles, swipe gestures, overlays
-    GameViewModel.kt          - Holds GameUiState, forwards swipes to the engine, persists best score
-    logic/GameLogic.kt        - Pure game engine (tiles with stable ids, moves, merging, win/lose)
-    ui/theme/                 - Compose Material3 theme: warm "Claude"-style palette & typography
-  src/test/kotlin/.../logic/  - JUnit tests for Game2048Engine
+    MainActivity.kt              - Activity entry point
+    GameScreen.kt                 - Compose UI: Start Screen, board, animated tiles, swipe/tap gestures, overlays
+    GameViewModel.kt               - Holds GameUiState, forwards swipes/Jokers to the engine, persists all state
+    logic/GameLogic.kt             - Pure game engine (tiles with stable ids, moves, merging, Jokers, win/lose)
+    logic/BoardSizeOption.kt       - Board size tiers (Classic/Big/Mega/Giant) and their unlock levels
+    logic/LevelTracker.kt          - Cumulative-score → player Level curve
+    logic/StreakTracker.kt         - Daily streak state machine + milestone detection
+    logic/ThemeUnlocks.kt          - Tile color palette definitions and unlock levels
+    logic/GameStateSerializer.kt   - Encodes/decodes GameState for SharedPreferences persistence
+    ui/theme/                      - Compose Material3 theme: per-palette colors & typography
+  src/test/kotlin/.../logic/       - 73 JUnit tests across 6 files (engine, level, streak, unlocks, serialization)
 ```
 
 ## Opening the project
@@ -45,27 +93,31 @@ app/
 1. Install [Android Studio](https://developer.android.com/studio) (this project targets
    compileSdk/targetSdk 35, minSdk 24 — Android Studio will prompt to install any missing
    SDK platform/build-tools on first sync).
-2. Open the `game2048/` folder as a project (`File > Open`).
+2. Open this repository's root folder as a project (`File > Open`).
 3. Let Gradle sync finish (this needs an internet connection to download the Android
    Gradle Plugin, Kotlin, and AndroidX/Compose dependencies the first time).
 4. Run the `app` configuration on an emulator or a connected device.
 
 ## Running the unit tests
 
-In Android Studio: right-click `app/src/test/kotlin/.../logic/Game2048EngineTest.kt` and
-choose "Run", or from a terminal once the project has synced at least once:
+In Android Studio: right-click `app/src/test/kotlin/.../logic/` and choose "Run", or from a
+terminal once the project has synced at least once:
 
 ```
 ./gradlew test
 ```
 
-## Notes on how this was built
+## Build & verification status
 
-This project was generated in a cloud sandbox that has Java and Gradle but no Android SDK
-and no network access to Maven/Google's package repositories — so the Gradle wrapper here
-was generated locally (jar included), but the project itself could not be compiled or run
-end-to-end in that sandbox. Everything was written carefully by hand against current
-Android/Compose/Kotlin APIs, and the core game algorithm was independently verified in
-Python (see above), but you should expect to do the first Gradle sync/build yourself in
-Android Studio, and to fix up any small API-version mismatches Android Studio's sync
-flags, before you can run it on a device.
+This app builds and has been installed and played on a real device across many rounds of
+changes — it isn't just unit-tested in isolation. In day-to-day development it's typically
+built in an environment with the Android SDK/Gradle available (not necessarily this checkout's
+machine) and the resulting APK is installed and tested by hand on-device; there's no CI wired
+up yet to build every commit automatically. If you're setting this up fresh in Android Studio
+for the first time, the initial Gradle sync still needs an internet connection to fetch the
+Android Gradle Plugin, Kotlin, and AndroidX/Compose dependencies, but no source changes should
+be needed to get it running.
+
+The core game algorithm was additionally cross-checked early on against an independent Python
+re-implementation — known board/merge cases plus 500 randomized-game invariant simulations —
+before the Jokers, board-size tiers, and progression systems were layered on top of it.
