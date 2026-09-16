@@ -25,7 +25,10 @@ android {
         applicationId = "com.kriruo.game2048"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
+        // Overridable via -PversionCode=<n> (release-build.yml passes the CI run number so
+        // every uploaded bundle gets a strictly increasing versionCode, as Play requires).
+        // Local builds without that property default to 1.
+        versionCode = (project.findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"

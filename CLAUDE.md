@@ -81,11 +81,15 @@ left, roughly in order:
    automation can target that app listing) — grab the artifact from a `release-build.yml` run.
 
 **Next technical step once an app exists in Play Console:**
-- Automate versionCode bumping (currently hardcoded `versionCode = 1` / `versionName = "1.0"`
-  in `app/build.gradle.kts` — Play requires a strictly increasing versionCode per upload).
 - Add Play Developer API upload to CI (e.g. `r0adkll/upload-google-play` action) using a
   service-account JSON key, targeting the **internal testing track** first (no review wait,
   good for KriRuo's invited testers) before ever touching `production`.
+
+`versionCode` is already handled: `app/build.gradle.kts` reads it from a `-PversionCode=<n>`
+Gradle property (defaulting to `1` for local/unspecified builds), and `release-build.yml`
+passes `github.run_number` for that property — so every bundle built by that workflow gets a
+strictly increasing versionCode automatically. `versionName` is still the static `"1.0"`;
+bump it by hand in `app/build.gradle.kts` when you actually want the version string to move.
 
 ## Architecture
 
