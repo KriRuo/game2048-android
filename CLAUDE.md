@@ -52,8 +52,15 @@ can be merged, and requires the branch to be up to date with `master` first. Adm
 blocked from bypassing it, so direct pushes to `master` (the workflow used so far in this
 repo's early history) still work.
 
-None of the above touches Play Store distribution — that's a separate, not-yet-built path
-(release keystore + `bundleRelease` + Play Developer API upload) discussed but not implemented.
+- **`release-build.yml`** — manual-only (`workflow_dispatch`), builds a **signed** release
+  `.aab` via `./gradlew bundleRelease` using a release keystore that lives only as GitHub
+  Actions secrets (never committed): `RELEASE_KEYSTORE_BASE64` (the keystore file, base64),
+  `RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD`. The workflow writes
+  `app/game2048-release.jks` and a root `keystore.properties` from those secrets, builds, then
+  deletes both before the job ends. Output is uploaded as a workflow artifact named
+  `app-release-bundle` (not published anywhere — there's no Play Console listing yet to push
+  to). This is prep for eventual Play Store upload automation (Play Developer API), not that
+  automation itself.
 
 ## Architecture
 
