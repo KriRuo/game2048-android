@@ -11,11 +11,13 @@ import com.example.game2048.logic.Game2048Engine
 import com.example.game2048.logic.GameStateSerializer
 import com.example.game2048.logic.Joker
 import com.example.game2048.logic.LevelTracker
+import com.example.game2048.logic.PatternUnlocks
 import com.example.game2048.logic.StreakState
 import com.example.game2048.logic.StreakTracker
 import com.example.game2048.logic.ThemeUnlocks
 import com.example.game2048.logic.Tile
 import com.example.game2048.logic.TilePalette
+import com.example.game2048.logic.TilePattern
 import com.example.game2048.logic.TileMovement
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,6 +32,7 @@ private const val KEY_STREAK_LONGEST = "streak_longest"
 private const val KEY_STREAK_LAST_DAY = "streak_last_day"
 private const val KEY_CUMULATIVE_SCORE = "cumulative_score"
 private const val KEY_SELECTED_PALETTE = "selected_palette"
+private const val KEY_SELECTED_PATTERN = "selected_pattern"
 private const val KEY_SELECTED_BOARD_SIZE = "selected_board_size"
 private const val KEY_SELECTED_GAME_MODE = "selected_game_mode"
 private const val KEY_GAMES_PLAYED = "games_played"
@@ -94,6 +97,9 @@ data class GameUiState(
     val levelAtGameStart: Int = 1,
     /** The currently-active tile color palette (see [TilePalette]). */
     val selectedPalette: TilePalette = TilePalette.DEFAULT,
+    /** The currently-active tile pattern overlay (see [TilePattern]) -- composes with
+     *  [selectedPalette] rather than replacing it. */
+    val selectedPattern: TilePattern = TilePattern.DEFAULT,
     /** The player's stored board-size preference (see [BoardSizeOption]). Takes effect on the
      *  *next* New Game -- [game]'s actual size is [GameState.boardSize], which doesn't change
      *  mid-game even if this is changed while playing. */
@@ -158,6 +164,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private var cumulativeScore: Long = prefs.getLong(KEY_CUMULATIVE_SCORE, 0L)
     private var bestScore: Int = prefs.getInt(KEY_BEST_SCORE, 0)
     private var selectedPalette: TilePalette = TilePalette.fromId(prefs.getString(KEY_SELECTED_PALETTE, null))
+    private var selectedPattern: TilePattern = TilePattern.fromId(prefs.getString(KEY_SELECTED_PATTERN, null))
     private var selectedBoardSize: BoardSizeOption = BoardSizeOption.fromId(prefs.getString(KEY_SELECTED_BOARD_SIZE, null))
     private var selectedGameMode: GameMode = GameMode.fromId(prefs.getString(KEY_SELECTED_GAME_MODE, null))
     private var gamesPlayed: Int = prefs.getInt(KEY_GAMES_PLAYED, 0)
@@ -242,6 +249,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             cumulativeScore = cumulativeScore,
             levelAtGameStart = level,
             selectedPalette = selectedPalette,
+            selectedPattern = selectedPattern,
             selectedBoardSize = selectedBoardSize,
             gameMode = selectedGameMode,
             gamesPlayed = gamesPlayed,
@@ -265,6 +273,15 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         selectedPalette = palette
         prefs.edit().putString(KEY_SELECTED_PALETTE, palette.id).commit()
         _uiState.value = current.copy(selectedPalette = palette)
+    }
+
+    /** No-ops if [pattern] isn't unlocked yet at the player's current level. */
+    fun onSelectPattern(pattern: TilePattern) {
+        val current = _uiState.value
+        if (!PatternUnlocks.isUnlocked(pattern, current.level)) return
+        selectedPattern = pattern
+        prefs.edit().putString(KEY_SELECTED_PATTERN, pattern.id).commit()
+        _uiState.value = current.copy(selectedPattern = pattern)
     }
 
     /** No-ops if [option] isn't unlocked yet at the player's current level. Only updates the
@@ -570,6 +587,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             cumulativeScore = cumulativeScore,
             levelAtGameStart = level,
             selectedPalette = selectedPalette,
+            selectedPattern = selectedPattern,
             selectedBoardSize = selectedBoardSize,
             gameMode = selectedGameMode,
             gamesPlayed = gamesPlayed,

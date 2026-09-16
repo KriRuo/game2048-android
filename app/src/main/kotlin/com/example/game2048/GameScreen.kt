@@ -48,6 +48,7 @@ fun Game2048App(viewModel: GameViewModel = viewModel()) {
             uiState = uiState,
             onSelectGameMode = viewModel::onSelectGameMode,
             onSelectPalette = viewModel::onSelectPalette,
+            onSelectPattern = viewModel::onSelectPattern,
             onSelectBoardSize = viewModel::onSelectBoardSize,
             onWelcomeDismissed = viewModel::onWelcomeDismissed,
             onDebugResetWelcome = viewModel::onDebugResetWelcome,

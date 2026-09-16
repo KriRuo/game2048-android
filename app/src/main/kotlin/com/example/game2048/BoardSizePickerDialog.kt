@@ -29,7 +29,7 @@ import com.example.game2048.logic.BoardSizeUnlocks
 import com.example.game2048.ui.theme.LocalPaletteColors
 
 /** Board size picker -- one of the three Start Screen customize dialogs (see also
- *  [ThemePickerDialog], [StatsDialog]). Selecting a size here only takes effect on the
+ *  [AppearancePickerDialog], [StatsDialog]). Selecting a size here only takes effect on the
  *  next New Game (see [GameUiState.selectedBoardSize]); since this now only lives on
  *  the Start Screen, that's every time before Play anyway. */
 @Composable

@@ -52,6 +52,7 @@ import com.example.game2048.logic.BoardSizeOption
 import com.example.game2048.logic.GameMode
 import com.example.game2048.logic.LevelTracker
 import com.example.game2048.logic.TilePalette
+import com.example.game2048.logic.TilePattern
 import com.example.game2048.ui.theme.LocalPaletteColors
 import kotlin.math.PI
 import kotlin.math.cos
@@ -66,6 +67,7 @@ internal fun StartScreen(
     uiState: GameUiState,
     onSelectGameMode: (GameMode) -> Unit,
     onSelectPalette: (TilePalette) -> Unit,
+    onSelectPattern: (TilePattern) -> Unit,
     onSelectBoardSize: (BoardSizeOption) -> Unit,
     onPlay: () -> Unit,
     onWelcomeDismissed: () -> Unit,
@@ -73,7 +75,7 @@ internal fun StartScreen(
     onClaimDailyReward: () -> Unit
 ) {
     val accent = LocalPaletteColors.current.accent
-    var showThemePicker by remember { mutableStateOf(false) }
+    var showAppearancePicker by remember { mutableStateOf(false) }
     var showBoardSizePicker by remember { mutableStateOf(false) }
     var showStats by remember { mutableStateOf(false) }
     // Evaluated once, the first time this composable enters composition (i.e. once per real
@@ -167,8 +169,8 @@ internal fun StartScreen(
             ) {
                 StartScreenIconButton(
                     label = "🎨",
-                    contentDescription = "Theme",
-                    onClick = { showThemePicker = true }
+                    contentDescription = "Appearance",
+                    onClick = { showAppearancePicker = true }
                 )
                 StartScreenIconButton(
                     label = "${uiState.selectedBoardSize.size}×${uiState.selectedBoardSize.size}",
@@ -227,12 +229,14 @@ internal fun StartScreen(
         }
     }
 
-    if (showThemePicker) {
-        ThemePickerDialog(
+    if (showAppearancePicker) {
+        AppearancePickerDialog(
             currentPalette = uiState.selectedPalette,
+            currentPattern = uiState.selectedPattern,
             level = uiState.level,
-            onSelect = onSelectPalette,
-            onDismiss = { showThemePicker = false }
+            onSelectPalette = onSelectPalette,
+            onSelectPattern = onSelectPattern,
+            onDismiss = { showAppearancePicker = false }
         )
     }
     if (showBoardSizePicker) {
@@ -275,7 +279,7 @@ internal fun StartScreen(
     }
 }
 
-/** One of the three customize entry points on [StartScreen] (theme / board size / stats) --
+/** One of the three customize entry points on [StartScreen] (appearance / board size / stats) --
  *  a small outlined icon button, matching the style [Header]/[Sidebar] used for their icon-only
  *  actions. [label] is either a single emoji or, for the board-size button, the currently
  *  selected size (e.g. "8×8") so the active choice is visible without opening the picker. */

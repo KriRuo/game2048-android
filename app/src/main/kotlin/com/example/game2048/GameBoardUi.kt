@@ -37,6 +37,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
@@ -49,10 +52,13 @@ import com.example.game2048.logic.BoardSizeUnlocks
 import com.example.game2048.logic.Direction
 import com.example.game2048.logic.GameMode
 import com.example.game2048.logic.Joker
+import com.example.game2048.logic.PatternUnlocks
 import com.example.game2048.logic.ThemeUnlocks
 import com.example.game2048.logic.Tile
 import com.example.game2048.logic.TileMovement
+import com.example.game2048.logic.TilePattern
 import com.example.game2048.ui.theme.LocalPaletteColors
+import com.example.game2048.ui.theme.LocalTilePattern
 import kotlin.math.abs
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -182,6 +188,15 @@ internal fun BoardArea(
                         BoardSizeUnlocks.newlyUnlocked(uiState.levelAtGameStart, uiState.level)?.let { unlocked ->
                             Text(
                                 text = "📐 ${unlocked.displayName} unlocked — pick it from the Start Screen.",
+                                modifier = Modifier.padding(top = 10.dp),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = accent
+                            )
+                        }
+                        PatternUnlocks.newlyUnlocked(uiState.levelAtGameStart, uiState.level)?.let { unlocked ->
+                            Text(
+                                text = "✨ ${unlocked.displayName} pattern is yours now.",
                                 modifier = Modifier.padding(top = 10.dp),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
@@ -396,6 +411,49 @@ private fun Board(
     }
 }
 
+/** Draws [pattern] as a low-alpha overlay on top of whatever's already been drawn (the tile's
+ *  background color), using [tint] -- the same color the tile's number already uses via
+ *  [com.example.game2048.ui.theme.PaletteColors.tileTextColor], so the overlay always reads
+ *  against [com.example.game2048.ui.theme.PaletteColors.tileColor] regardless of which palette
+ *  is active, with no per-palette pattern colors to author. */
+internal fun Modifier.tilePattern(pattern: TilePattern, tint: Color): Modifier = drawWithContent {
+    drawContent()
+    val overlay = tint.copy(alpha = 0.14f)
+    when (pattern) {
+        TilePattern.NONE -> Unit
+        TilePattern.STRIPES -> {
+            val gap = size.minDimension / 5f
+            var offset = -size.height
+            while (offset < size.width) {
+                drawLine(
+                    color = overlay,
+                    start = Offset(offset, size.height),
+                    end = Offset(offset + size.height, 0f),
+                    strokeWidth = gap * 0.4f
+                )
+                offset += gap
+            }
+        }
+        TilePattern.CAMO -> {
+            drawCircle(overlay, radius = size.minDimension * 0.32f, center = Offset(size.width * 0.28f, size.height * 0.32f))
+            drawCircle(overlay, radius = size.minDimension * 0.24f, center = Offset(size.width * 0.72f, size.height * 0.68f))
+            drawCircle(overlay, radius = size.minDimension * 0.20f, center = Offset(size.width * 0.75f, size.height * 0.22f))
+            drawCircle(overlay, radius = size.minDimension * 0.18f, center = Offset(size.width * 0.22f, size.height * 0.78f))
+        }
+        TilePattern.BUBBLES -> {
+            listOf(
+                Offset(size.width * 0.22f, size.height * 0.28f) to 0.14f,
+                Offset(size.width * 0.70f, size.height * 0.22f) to 0.10f,
+                Offset(size.width * 0.50f, size.height * 0.55f) to 0.16f,
+                Offset(size.width * 0.78f, size.height * 0.72f) to 0.11f,
+                Offset(size.width * 0.20f, size.height * 0.75f) to 0.09f
+            ).forEach { (center, radiusFraction) ->
+                drawCircle(overlay, radius = size.minDimension * radiusFraction, center = center)
+            }
+        }
+    }
+}
+
 @Composable
 private fun AnimatedTile(
     tile: Tile,
@@ -410,6 +468,7 @@ private fun AnimatedTile(
     onJokerTap: (() -> Unit)? = null
 ) {
     val palette = LocalPaletteColors.current
+    val pattern = LocalTilePattern.current
     val animatedX by animateDpAsState(
         targetValue = x,
         animationSpec = tween(SLIDE_DURATION_MS, easing = FastOutSlowInEasing),
@@ -450,6 +509,7 @@ private fun AnimatedTile(
             }
             .clip(RoundedCornerShape(10.dp))
             .background(palette.tileColor(tile.value))
+            .tilePattern(pattern, palette.tileTextColor(tile.value))
             .then(
                 if (isJokerPicked) {
                     Modifier.border(3.dp, palette.accent, RoundedCornerShape(10.dp))
@@ -481,6 +541,7 @@ private fun GhostTile(
     cellSize: Dp
 ) {
     val palette = LocalPaletteColors.current
+    val pattern = LocalTilePattern.current
     // Animate as plain Float (dp magnitude) rather than Animatable<Dp, _> to avoid depending
     // on the exact name/location of Compose's Dp vector-converter across versions.
     val x = remember { Animatable(fromX.value) }
@@ -502,7 +563,8 @@ private fun GhostTile(
             .size(cellSize)
             .graphicsLayer { this.alpha = alpha.value }
             .clip(RoundedCornerShape(10.dp))
-            .background(palette.tileColor(value)),
+            .background(palette.tileColor(value))
+            .tilePattern(pattern, palette.tileTextColor(value)),
         contentAlignment = Alignment.Center
     ) {
         Text(

@@ -10,7 +10,7 @@ Native Android 2048 in Kotlin + Jetpack Compose (Material 3), `applicationId`
 ## Commands
 
 ```
-./gradlew test                 # run all 73 JUnit tests (logic package only, no Android deps)
+./gradlew test                 # run all 86 JUnit tests (logic package only, no Android deps)
 ./gradlew test --tests "com.example.game2048.logic.Game2048EngineTest"   # single test class
 ./gradlew assembleDebug        # debug APK
 ./gradlew assembleRelease      # release APK (unsigned unless keystore.properties is present)
@@ -57,6 +57,10 @@ the engine, each with no Android or Compose dependency:
   engine depends on it.
 - `ThemeUnlocks` — tile color palette definitions (Clay/Meadow/Midnight/Berry/Cyber) and their
   unlock levels.
+- `PatternUnlocks` — tile pattern overlays (Solid/Stripes/Camo/Bubbles) and their unlock levels
+  (40/55/70, past the level-30 point where every other unlock lands); a pattern draws on top of
+  whichever palette is active rather than replacing it, so it composes with `ThemeUnlocks` as a
+  second, independent axis instead of rivaling it -- see `GameBoardUi.tilePattern`.
 
 `GameMode` (ORIGINAL vs. EXTENDED) only changes which actions the UI exposes (Undo, Jokers);
 switching modes mid-game never touches the board in progress.
@@ -66,10 +70,11 @@ one piece of the visual/interaction surface: `MainActivity` (entry point) → `G
 (Start vs. Game nav + in-game layout) → `StartScreen` (mode/theme/board-size/stats entry
 points) / `GameChrome` (header/sidebar + score chip) / `GameBoardUi` (grid, animated tiles,
 swipe gestures) / `JokerUi` (aiming banner + action bar) / `GameOverlays` (combo popup, streak
-banner, win/game-over overlay), with `ThemePickerDialog`, `BoardSizePickerDialog`,
-`StatsDialog`, `WelcomeDialog` (first-run "How to Play" walkthrough), and `DailyRewardDialog`
-(claimable streak bonus-XP) as the picker/info dialogs opened from `StartScreen`, plus
-`ConfirmNewGameDialog` opened from the in-game New Game button. `ui/theme/` holds the Material3
+banner, win/game-over overlay), with `AppearancePickerDialog` (combined Theme + Pattern picker,
+one icon), `BoardSizePickerDialog`, `StatsDialog`, `WelcomeDialog` (first-run "How to Play"
+walkthrough), and `DailyRewardDialog` (claimable streak bonus-XP) as the picker/info dialogs
+opened from `StartScreen`, plus `ConfirmNewGameDialog` opened from the in-game New Game button.
+`ui/theme/` holds the Material3
 theme wiring (colors per palette, typography).
 
 **Streaks and Levels are directly connected**: `StreakTracker.dailyBonusXp(streakDay)` (pure,

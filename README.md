@@ -30,7 +30,9 @@ it's a deliberate before-you-play step, not a mid-game distraction):
   exposed, it never touches the board in progress.
   - **Original** — classic 2048 rules: swipe only, no Undo, no Jokers.
   - **Extended** (default) — adds Undo and the five Jokers below.
-- **🎨 Theme icon** — opens the palette picker.
+- **🎨 Appearance icon** — opens the combined Theme + Pattern picker (tile color palette, plus a
+  pattern overlay drawn on top of it -- e.g. stripes, camo, bubbles -- unlocked separately as you
+  level up past what Theme alone unlocks).
 - **Board size icon** — shows the currently selected size (e.g. "8×8") and opens the size
   picker; updates live the moment you pick a different (unlocked) size.
 - **📊 Stats icon** — opens lifetime stats (games played, highest tile, total merges).
@@ -57,10 +59,14 @@ Screen's ❓ icon.
   "1,234 / 2,000 XP to Level N" -- rather than just the Level number.
 - **Board sizes**, unlocked by Level and selectable from the Start Screen's board-size icon:
   Classic 4×4 (default), Big 5×5 (Level 10), Mega 6×6 (Level 15), Giant 8×8 (Level 20).
-- **Color palettes**, unlocked by Level and selectable from the Start Screen's Theme icon:
+- **Color palettes**, unlocked by Level and selectable from the Start Screen's Appearance icon:
   Clay (default), Meadow (Level 3), Midnight (Level 6), Berry (Level 10), and Cyber (Level 30)
   — Cyber breaks from the others' single-hue ramp with a neon cyan → violet → magenta
   progression.
+- **Tile patterns**, a second cosmetic axis layered on top of whichever palette is active,
+  also unlocked by Level and picked from the same Appearance icon: Solid (default), Stripes
+  (Level 40), Camo (Level 55), and Bubbles (Level 70) — these keep paying out past Level 30,
+  where every board-size/palette unlock has already landed.
 - A debug shortcut (tap the score chip 5× quickly) jumps straight to Level 30, mainly to
   reach Cyber/Mega without grinding. A second one, tapping the Start Screen's BEST chip 5×
   quickly, resets the first-run walkthrough's "seen" flag so it can be tested again (force-stop
@@ -83,11 +89,11 @@ Screen's ❓ icon.
 - Game logic is a pure, dependency-free `Game2048Engine` (in `logic/GameLogic.kt`) that
   tracks a stable id per tile through every slide, merge, and Joker action, so the UI can
   animate individual tiles rather than snapping a raw value grid into place. Progression logic
-  (`LevelTracker`, `StreakTracker`, `ThemeUnlocks`, `BoardSizeOption`) is similarly pure and
-  independently unit tested.
-- 78 JUnit tests across 6 files under `app/src/test/kotlin/.../logic/` cover the engine
-  (including Jokers and board-size variants), level curve, streak transitions, theme/board-size
-  unlock rules, and save-state (de)serialization.
+  (`LevelTracker`, `StreakTracker`, `ThemeUnlocks`, `TilePattern`, `BoardSizeOption`) is similarly
+  pure and independently unit tested.
+- 86 JUnit tests across 7 files under `app/src/test/kotlin/.../logic/` cover the engine
+  (including Jokers and board-size variants), level curve, streak transitions, theme/pattern/
+  board-size unlock rules, and save-state (de)serialization.
 - Play Store upload-ready: real `applicationId` (`com.kriruo.game2048`), an optional release
   signing config read from a gitignored `keystore.properties`, and R8 minification/resource
   shrinking enabled for release builds.
@@ -106,7 +112,7 @@ app/
     GameBoardUi.kt                     - The board itself: tile grid, animated tiles, swipe gestures
     JokerUi.kt                          - Joker aiming banner + bottom action bar
     GameOverlays.kt                      - Combo popup, streak milestone banner, win/game-over overlay
-    ThemePickerDialog.kt                  - Palette picker (opened from StartScreen's Theme icon)
+    AppearancePickerDialog.kt              - Combined Theme + Pattern picker (opened from StartScreen's Appearance icon)
     BoardSizePickerDialog.kt               - Board size picker (opened from StartScreen's size icon)
     StatsDialog.kt                           - Lifetime stats (opened from StartScreen's Stats icon)
     WelcomeDialog.kt                           - First-run "How to Play" walkthrough (opened from StartScreen's ? icon)
@@ -118,9 +124,10 @@ app/
     logic/LevelTracker.kt                        - Cumulative-score → player Level curve
     logic/StreakTracker.kt                        - Daily streak state machine + milestone detection
     logic/ThemeUnlocks.kt                          - Tile color palette definitions and unlock levels
+    logic/TilePattern.kt                             - Tile pattern overlay definitions and unlock levels
     logic/GameStateSerializer.kt                    - Encodes/decodes GameState for SharedPreferences persistence
     ui/theme/                                        - Compose Material3 theme: per-palette colors & typography
-  src/test/kotlin/.../logic/                         - 78 JUnit tests across 6 files (engine, level, streak, unlocks, serialization)
+  src/test/kotlin/.../logic/                         - 86 JUnit tests across 7 files (engine, level, streak, unlocks, serialization)
 ```
 
 ## Opening the project
