@@ -112,7 +112,6 @@ private const val SCORE_POPUP_LIFETIME_MS = 700L
  *  height plus the gap above it) so the board shrinks to make room rather than the bar
  *  overflowing or overlapping it. */
 private val JOKER_BAR_RESERVED_HEIGHT = 96.dp
-private const val COMBO_POPUP_LIFETIME_MS = 900L
 
 private enum class AppScreen { START, GAME }
 
@@ -1335,85 +1334,6 @@ private fun JokerActionButton(
     }
 }
 
-/** Shows a transient "x3 Combo!" callout when a single move merges more than one pair. */
-@Composable
-private fun ComboPopup(comboCount: Int, moveToken: Long, modifier: Modifier = Modifier) {
-    var visibleCombo by remember { mutableStateOf<Int?>(null) }
-    LaunchedEffect(moveToken) {
-        if (moveToken > 0 && comboCount >= 2) {
-            visibleCombo = comboCount
-            delay(COMBO_POPUP_LIFETIME_MS)
-            visibleCombo = null
-        } else {
-            // Covers New Game resetting moveToken back to 0 while a popup from the
-            // previous game was still showing/fading -- otherwise it's stuck forever,
-            // since the branch above (which is what normally clears it) never runs.
-            visibleCombo = null
-        }
-    }
-
-    AnimatedVisibility(
-        visible = visibleCombo != null,
-        modifier = modifier,
-        enter = fadeIn(tween(120)) + scaleIn(
-            initialScale = 0.6f,
-            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
-        ),
-        exit = fadeOut(tween(220)) + scaleOut(targetScale = 0.8f, animationSpec = tween(220))
-    ) {
-        Text(
-            text = "×${visibleCombo ?: 0} Combo!",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            color = LocalPaletteColors.current.accent
-        )
-    }
-}
-
-private const val STREAK_MILESTONE_BANNER_LIFETIME_MS = 2200L
-
-/** Full-screen celebration shown once, the first time a streak milestone (3, 7, 14, ...
- *  days) is reached, then auto-dismisses via [onShown]. */
-@Composable
-private fun StreakMilestoneBanner(milestone: Int?, onShown: () -> Unit) {
-    var shownMilestone by remember { mutableStateOf<Int?>(null) }
-    LaunchedEffect(milestone) {
-        if (milestone != null) {
-            shownMilestone = milestone
-            delay(STREAK_MILESTONE_BANNER_LIFETIME_MS)
-            shownMilestone = null
-            onShown()
-        }
-    }
-
-    AnimatedVisibility(
-        visible = shownMilestone != null,
-        enter = fadeIn(tween(200)) + scaleIn(
-            initialScale = 0.85f,
-            animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy)
-        ),
-        exit = fadeOut(tween(220)) + scaleOut(targetScale = 0.9f, animationSpec = tween(220))
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .clip(RoundedCornerShape(16.dp))
-                .background(MaterialTheme.colorScheme.background.copy(alpha = 0.92f)),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(text = "🔥", fontSize = 48.sp)
-                Text(
-                    text = "${shownMilestone ?: 0}-Day Streak!",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = LocalPaletteColors.current.accent
-                )
-            }
-        }
-    }
-}
-
 @Composable
 private fun Board(
     boardSize: Int,
@@ -1702,37 +1622,4 @@ private fun fontSizeFor(value: Int) = when {
     value < 100_000 -> 15.sp
     value < 1_000_000 -> 12.sp
     else -> 10.sp
-}
-
-@Composable
-private fun GameOverlay(
-    title: String,
-    buttonLabel: String,
-    onButtonClick: () -> Unit,
-    extraContent: (@Composable ColumnScope.() -> Unit)? = null
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.background.copy(alpha = 0.88f)),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(
-                text = title,
-                style = MaterialTheme.typography.headlineLarge,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            extraContent?.invoke(this)
-            OutlinedButton(
-                modifier = Modifier.padding(top = 18.dp),
-                onClick = onButtonClick,
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = LocalPaletteColors.current.accent)
-            ) {
-                Text(buttonLabel, fontWeight = FontWeight.SemiBold)
-            }
-        }
-    }
 }
