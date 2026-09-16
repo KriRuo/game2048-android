@@ -46,6 +46,8 @@ fun Game2048App(viewModel: GameViewModel = viewModel()) {
         AppScreen.START -> StartScreen(
             uiState = uiState,
             onSelectGameMode = viewModel::onSelectGameMode,
+            onSelectPalette = viewModel::onSelectPalette,
+            onSelectBoardSize = viewModel::onSelectBoardSize,
             onPlay = {
                 // A game-over board can't be "resumed" -- start fresh in whichever mode was
                 // just picked. An in-progress (or brand new, unplayed) board is left alone so
@@ -85,14 +87,7 @@ fun GameScreen(viewModel: GameViewModel = viewModel(), onNavigateHome: () -> Uni
                     currentStreak = uiState.currentStreak,
                     level = uiState.level,
                     levelProgress = uiState.levelProgress,
-                    selectedPalette = uiState.selectedPalette,
-                    selectedBoardSize = uiState.selectedBoardSize,
-                    gamesPlayed = uiState.gamesPlayed,
-                    highestTileEver = uiState.highestTileEver,
-                    totalMerges = uiState.totalMerges,
                     onNewGame = viewModel::onNewGame,
-                    onSelectPalette = viewModel::onSelectPalette,
-                    onSelectBoardSize = viewModel::onSelectBoardSize,
                     onDebugJumpToLevel30 = viewModel::onDebugJumpToLevel30,
                     onNavigateHome = onNavigateHome,
                     modifier = Modifier.padding(end = 24.dp)
@@ -119,14 +114,7 @@ fun GameScreen(viewModel: GameViewModel = viewModel(), onNavigateHome: () -> Uni
                     currentStreak = uiState.currentStreak,
                     level = uiState.level,
                     levelProgress = uiState.levelProgress,
-                    selectedPalette = uiState.selectedPalette,
-                    selectedBoardSize = uiState.selectedBoardSize,
-                    gamesPlayed = uiState.gamesPlayed,
-                    highestTileEver = uiState.highestTileEver,
-                    totalMerges = uiState.totalMerges,
                     onNewGame = viewModel::onNewGame,
-                    onSelectPalette = viewModel::onSelectPalette,
-                    onSelectBoardSize = viewModel::onSelectBoardSize,
                     onDebugJumpToLevel30 = viewModel::onDebugJumpToLevel30,
                     onNavigateHome = onNavigateHome
                 )
