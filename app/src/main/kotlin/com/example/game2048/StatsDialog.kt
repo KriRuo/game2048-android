@@ -15,7 +15,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
 /** Lifetime stats -- one of the three Start Screen customize dialogs (see also
- *  [ThemePickerDialog], [BoardSizePickerDialog]). Never reset by New Game. */
+ *  [AppearancePickerDialog], [BoardSizePickerDialog]). Never reset by New Game. */
 @Composable
 internal fun StatsDialog(
     gamesPlayed: Int,
