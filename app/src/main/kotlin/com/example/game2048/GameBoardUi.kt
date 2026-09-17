@@ -441,15 +441,11 @@ internal fun Modifier.tilePattern(pattern: TilePattern, tint: Color): Modifier =
             drawCircle(overlay, radius = size.minDimension * 0.18f, center = Offset(size.width * 0.22f, size.height * 0.78f))
         }
         TilePattern.BUBBLES -> {
-            listOf(
-                Offset(size.width * 0.22f, size.height * 0.28f) to 0.14f,
-                Offset(size.width * 0.70f, size.height * 0.22f) to 0.10f,
-                Offset(size.width * 0.50f, size.height * 0.55f) to 0.16f,
-                Offset(size.width * 0.78f, size.height * 0.72f) to 0.11f,
-                Offset(size.width * 0.20f, size.height * 0.75f) to 0.09f
-            ).forEach { (center, radiusFraction) ->
-                drawCircle(overlay, radius = size.minDimension * radiusFraction, center = center)
-            }
+            drawCircle(overlay, radius = size.minDimension * 0.14f, center = Offset(size.width * 0.22f, size.height * 0.28f))
+            drawCircle(overlay, radius = size.minDimension * 0.10f, center = Offset(size.width * 0.70f, size.height * 0.22f))
+            drawCircle(overlay, radius = size.minDimension * 0.16f, center = Offset(size.width * 0.50f, size.height * 0.55f))
+            drawCircle(overlay, radius = size.minDimension * 0.11f, center = Offset(size.width * 0.78f, size.height * 0.72f))
+            drawCircle(overlay, radius = size.minDimension * 0.09f, center = Offset(size.width * 0.20f, size.height * 0.75f))
         }
     }
 }

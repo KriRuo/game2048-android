@@ -67,7 +67,7 @@ switching modes mid-game never touches the board in progress.
 
 **Compose UI is split by concern**, not by screen-per-file convenience — each file below owns
 one piece of the visual/interaction surface: `MainActivity` (entry point) → `GameScreen`
-(Start vs. Game nav + in-game layout) → `StartScreen` (mode/theme/board-size/stats entry
+(Start vs. Game nav + in-game layout) → `StartScreen` (mode/appearance/board-size/stats entry
 points) / `GameChrome` (header/sidebar + score chip) / `GameBoardUi` (grid, animated tiles,
 swipe gestures) / `JokerUi` (aiming banner + action bar) / `GameOverlays` (combo popup, streak
 banner, win/game-over overlay), with `AppearancePickerDialog` (combined Theme + Pattern picker,
