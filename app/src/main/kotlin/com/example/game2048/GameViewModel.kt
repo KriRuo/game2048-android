@@ -38,6 +38,7 @@ private const val KEY_SELECTED_GAME_MODE = "selected_game_mode"
 private const val KEY_GAMES_PLAYED = "games_played"
 private const val KEY_HIGHEST_TILE_EVER = "highest_tile_ever"
 private const val KEY_TOTAL_MERGES = "total_merges"
+private const val KEY_HIGHEST_LEVEL_EVER = "highest_level_ever"
 private const val KEY_HAS_SEEN_WELCOME = "has_seen_welcome"
 
 /** Single-move undos allowed per game (see [GameViewModel.onUndo]). Intentionally *not*
@@ -84,8 +85,16 @@ data class GameUiState(
      *  cleared via [GameViewModel.onMilestoneBannerShown]. */
     val justReachedMilestone: Int? = null,
     /** Player level, derived from cumulative score across every game ever played -- never
-     *  resets when a board does (see [LevelTracker]). */
+     *  resets when a board does (see [LevelTracker]). Can *decrease* if [GameViewModel.onUndo]
+     *  reverses enough score -- see [highestLevelEver] for the value that gates permanent
+     *  unlocks instead. */
     val level: Int = 1,
+    /** The highest [level] ever reached, independent of [onUndo] clawing [level] back down --
+     *  this is what actually gates [ThemeUnlocks]/[PatternUnlocks]/[BoardSizeUnlocks], so a
+     *  palette/pattern/board size earned once stays selectable even if the player later undoes
+     *  a move that (temporarily) drops [level] back below its unlock threshold. Never resets
+     *  when a board does, same as [level]. */
+    val highestLevelEver: Int = 1,
     /** Progress toward the next level, in [0f, 1f), for a progress bar. */
     val levelProgress: Float = 0f,
     /** The raw cumulative score [level]/[levelProgress] are derived from, exposed so the UI can
@@ -170,9 +179,16 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private var gamesPlayed: Int = prefs.getInt(KEY_GAMES_PLAYED, 0)
     private var highestTileEver: Int = prefs.getInt(KEY_HIGHEST_TILE_EVER, 0)
     private var totalMerges: Long = prefs.getLong(KEY_TOTAL_MERGES, 0L)
+    private var highestLevelEver: Int = prefs.getInt(KEY_HIGHEST_LEVEL_EVER, 1)
 
     private val _uiState = MutableStateFlow(buildInitialState())
     val uiState: StateFlow<GameUiState> = _uiState.asStateFlow()
+
+    /** Raises [highestLevelEver] to [level] if it's higher -- never called with a lowered level,
+     *  so this is a one-way ratchet. See [GameUiState.highestLevelEver]. */
+    private fun raiseHighestLevel(level: Int) {
+        if (level > highestLevelEver) highestLevelEver = level
+    }
 
     fun onSwipe(direction: Direction) {
         val current = _uiState.value
@@ -185,6 +201,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             totalMerges += result.mergedTileIds.size
             val highestTile = result.state.tiles.maxOfOrNull { it.value } ?: 0
             if (highestTile > highestTileEver) highestTileEver = highestTile
+            val level = LevelTracker.levelForCumulativeScore(cumulativeScore)
+            raiseHighestLevel(level)
             persist(result.state, includeBest = bestChanged)
             _uiState.value = current.copy(
                 game = result.state,
@@ -194,7 +212,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 previousTilesById = current.game.tiles.associateBy { it.id },
                 lastScoreGained = gained,
                 moveToken = current.moveToken + 1,
-                level = LevelTracker.levelForCumulativeScore(cumulativeScore),
+                level = level,
+                highestLevelEver = highestLevelEver,
                 levelProgress = LevelTracker.progressToNextLevel(cumulativeScore),
                 cumulativeScore = cumulativeScore,
                 undoState = current.game,
@@ -211,7 +230,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
      *  spent. Also reverses that move's contribution to cumulativeScore, so undo can't be used
      *  to farm Level XP by repeatedly making then undoing the same merge -- unlike
      *  [highestTileEver]/[totalMerges] (framed as lifetime "ever" stats that don't need this),
-     *  cumulativeScore gates real unlocks (themes, board sizes) so it can't be left exploitable. */
+     *  cumulativeScore gates [level] display, which can legitimately regress here. It deliberately
+     *  does *not* touch [highestLevelEver] -- a palette/pattern/board size already earned this
+     *  session stays earned even if this particular move's XP gets clawed back. */
     fun onUndo() {
         val current = _uiState.value
         val previous = current.undoState ?: return
@@ -231,6 +252,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             lastScoreGained = 0,
             moveToken = current.moveToken + 1,
             level = LevelTracker.levelForCumulativeScore(cumulativeScore),
+            highestLevelEver = highestLevelEver,
             levelProgress = LevelTracker.progressToNextLevel(cumulativeScore),
             cumulativeScore = cumulativeScore,
             undoState = null,
@@ -241,10 +263,11 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun onNewGame() {
         val current = _uiState.value
         val level = current.level
-        val boardSize = if (BoardSizeUnlocks.isUnlocked(selectedBoardSize, level)) selectedBoardSize.size else BoardSizeOption.DEFAULT.size
+        val boardSize = if (BoardSizeUnlocks.isUnlocked(selectedBoardSize, highestLevelEver)) selectedBoardSize.size else BoardSizeOption.DEFAULT.size
         gamesPlayed += 1
         val fresh = freshGame(best = bestScore, boardSize = boardSize).copy(
             level = level,
+            highestLevelEver = highestLevelEver,
             levelProgress = current.levelProgress,
             cumulativeScore = cumulativeScore,
             levelAtGameStart = level,
@@ -266,30 +289,33 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = fresh
     }
 
-    /** No-ops if [palette] isn't unlocked yet at the player's current level. */
+    /** No-ops if [palette] isn't unlocked yet -- gated on [highestLevelEver], not the player's
+     *  current (possibly undo-lowered) level, so a palette earned once stays selectable. */
     fun onSelectPalette(palette: TilePalette) {
         val current = _uiState.value
-        if (!ThemeUnlocks.isUnlocked(palette, current.level)) return
+        if (!ThemeUnlocks.isUnlocked(palette, highestLevelEver)) return
         selectedPalette = palette
         prefs.edit().putString(KEY_SELECTED_PALETTE, palette.id).commit()
         _uiState.value = current.copy(selectedPalette = palette)
     }
 
-    /** No-ops if [pattern] isn't unlocked yet at the player's current level. */
+    /** No-ops if [pattern] isn't unlocked yet -- gated on [highestLevelEver], not the player's
+     *  current (possibly undo-lowered) level, so a pattern earned once stays selectable. */
     fun onSelectPattern(pattern: TilePattern) {
         val current = _uiState.value
-        if (!PatternUnlocks.isUnlocked(pattern, current.level)) return
+        if (!PatternUnlocks.isUnlocked(pattern, highestLevelEver)) return
         selectedPattern = pattern
         prefs.edit().putString(KEY_SELECTED_PATTERN, pattern.id).commit()
         _uiState.value = current.copy(selectedPattern = pattern)
     }
 
-    /** No-ops if [option] isn't unlocked yet at the player's current level. Only updates the
-     *  stored preference for the *next* New Game -- selecting this mid-game doesn't resize (or
-     *  reset) the board currently in play; see [GameUiState.selectedBoardSize]. */
+    /** No-ops if [option] isn't unlocked yet -- gated on [highestLevelEver], not the player's
+     *  current (possibly undo-lowered) level, so a board size earned once stays selectable. Only
+     *  updates the stored preference for the *next* New Game -- selecting this mid-game doesn't
+     *  resize (or reset) the board currently in play; see [GameUiState.selectedBoardSize]. */
     fun onSelectBoardSize(option: BoardSizeOption) {
         val current = _uiState.value
-        if (!BoardSizeUnlocks.isUnlocked(option, current.level)) return
+        if (!BoardSizeUnlocks.isUnlocked(option, highestLevelEver)) return
         selectedBoardSize = option
         prefs.edit().putString(KEY_SELECTED_BOARD_SIZE, option.id).commit()
         _uiState.value = current.copy(selectedBoardSize = option)
@@ -469,6 +495,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         if (bestChanged) bestScore = result.state.best
         val highestTile = result.state.tiles.maxOfOrNull { it.value } ?: 0
         if (highestTile > highestTileEver) highestTileEver = highestTile
+        val level = LevelTracker.levelForCumulativeScore(cumulativeScore)
+        raiseHighestLevel(level)
         persist(result.state, includeBest = bestChanged)
         _uiState.value = current.copy(
             game = result.state,
@@ -478,7 +506,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             previousTilesById = current.game.tiles.associateBy { it.id },
             lastScoreGained = gained,
             moveToken = current.moveToken + 1,
-            level = LevelTracker.levelForCumulativeScore(cumulativeScore),
+            level = level,
+            highestLevelEver = highestLevelEver,
             levelProgress = LevelTracker.progressToNextLevel(cumulativeScore),
             cumulativeScore = cumulativeScore,
             undoState = current.game,
@@ -498,10 +527,15 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val target = LevelTracker.scoreRequiredForLevel(30)
         if (cumulativeScore >= target) return
         cumulativeScore = target
-        prefs.edit().putLong(KEY_CUMULATIVE_SCORE, cumulativeScore).commit()
         val level = LevelTracker.levelForCumulativeScore(cumulativeScore)
+        raiseHighestLevel(level)
+        prefs.edit()
+            .putLong(KEY_CUMULATIVE_SCORE, cumulativeScore)
+            .putInt(KEY_HIGHEST_LEVEL_EVER, highestLevelEver)
+            .commit()
         _uiState.value = _uiState.value.copy(
             level = level,
+            highestLevelEver = highestLevelEver,
             levelProgress = LevelTracker.progressToNextLevel(cumulativeScore),
             cumulativeScore = cumulativeScore,
             levelAtGameStart = level
@@ -533,11 +567,16 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun onClaimDailyReward() {
         val reward = _uiState.value.pendingDailyReward ?: return
         cumulativeScore += reward
-        prefs.edit().putLong(KEY_CUMULATIVE_SCORE, cumulativeScore).commit()
         val level = LevelTracker.levelForCumulativeScore(cumulativeScore)
+        raiseHighestLevel(level)
+        prefs.edit()
+            .putLong(KEY_CUMULATIVE_SCORE, cumulativeScore)
+            .putInt(KEY_HIGHEST_LEVEL_EVER, highestLevelEver)
+            .commit()
         _uiState.value = _uiState.value.copy(
             pendingDailyReward = null,
             level = level,
+            highestLevelEver = highestLevelEver,
             levelProgress = LevelTracker.progressToNextLevel(cumulativeScore),
             cumulativeScore = cumulativeScore,
             levelAtGameStart = level
@@ -578,11 +617,16 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             updatedStreak.lastPlayedEpochDay != previousStreak.lastPlayedEpochDay
         val pendingReward = if (justAdvancedStreak) StreakTracker.dailyBonusXp(updatedStreak.current) else null
         val level = LevelTracker.levelForCumulativeScore(cumulativeScore)
+        // Seeds highestLevelEver for installs updating from before this field existed: without
+        // this, an existing player who'd already earned unlocks at their current level would
+        // otherwise start at the default of 1 and find them all newly "locked".
+        raiseHighestLevel(level)
         return base.copy(
             currentStreak = updatedStreak.current,
             longestStreak = updatedStreak.longest,
             justReachedMilestone = milestone,
             level = level,
+            highestLevelEver = highestLevelEver,
             levelProgress = LevelTracker.progressToNextLevel(cumulativeScore),
             cumulativeScore = cumulativeScore,
             levelAtGameStart = level,
@@ -656,6 +700,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             .putInt(KEY_GAMES_PLAYED, gamesPlayed)
             .putInt(KEY_HIGHEST_TILE_EVER, highestTileEver)
             .putLong(KEY_TOTAL_MERGES, totalMerges)
+            .putInt(KEY_HIGHEST_LEVEL_EVER, highestLevelEver)
         if (includeBest) editor.putInt(KEY_BEST_SCORE, bestScore)
         editor.commit()
     }

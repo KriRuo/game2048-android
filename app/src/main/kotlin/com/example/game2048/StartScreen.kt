@@ -233,7 +233,7 @@ internal fun StartScreen(
         AppearancePickerDialog(
             currentPalette = uiState.selectedPalette,
             currentPattern = uiState.selectedPattern,
-            level = uiState.level,
+            level = uiState.highestLevelEver,
             onSelectPalette = onSelectPalette,
             onSelectPattern = onSelectPattern,
             onDismiss = { showAppearancePicker = false }
@@ -242,7 +242,7 @@ internal fun StartScreen(
     if (showBoardSizePicker) {
         BoardSizePickerDialog(
             selectedBoardSize = uiState.selectedBoardSize,
-            level = uiState.level,
+            level = uiState.highestLevelEver,
             onSelect = onSelectBoardSize,
             onDismiss = { showBoardSizePicker = false }
         )
