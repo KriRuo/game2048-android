@@ -3,21 +3,16 @@ package com.example.game2048
 import android.content.Context
 import android.util.Log
 import com.google.firebase.FirebaseApp
-import com.google.firebase.FirebaseOptions
 import com.google.firebase.analytics.FirebaseAnalytics
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 
 /**
- * Thin, fail-safe wrapper around Firebase Analytics/Crashlytics. This project deliberately
- * skips the google-services Gradle plugin (which would require committing a
- * google-services.json) -- see the comment on `firebasePropertiesFile` in app/build.gradle.kts.
- * Firebase is instead configured from [BuildConfig] fields sourced from an optional, gitignored
- * `firebase.properties`, and initialized manually here via [FirebaseOptions] rather than relying
- * on the library's own auto-init (which is removed in AndroidManifest.xml).
- *
- * Every function here is safe to call unconditionally from anywhere in the app: with no
- * `firebase.properties` present (the default -- true for every clone of this repo and for CI),
- * [init] leaves [analytics]/[crashlytics] null and every logging call below silently no-ops.
+ * Thin, fail-safe wrapper around Firebase Analytics/Crashlytics. Configuration comes from
+ * app/google-services.json (gitignored, fetched via the Firebase CLI -- see the comment on
+ * `googleServicesFile` in app/build.gradle.kts) via the standard google-services Gradle plugin
+ * and its normal auto-init. [BuildConfig.FIREBASE_ENABLED] mirrors whether that file existed at
+ * build time, so every function here stays safe to call unconditionally even when it didn't
+ * (true for every fresh clone of this repo and for CI today).
  */
 object AppAnalytics {
     private const val TAG = "AppAnalytics"
@@ -32,14 +27,7 @@ object AppAnalytics {
         initialized = true
         if (!BuildConfig.FIREBASE_ENABLED) return
         try {
-            val app = FirebaseApp.getApps(context).firstOrNull() ?: FirebaseApp.initializeApp(
-                context,
-                FirebaseOptions.Builder()
-                    .setApiKey(BuildConfig.FIREBASE_API_KEY)
-                    .setApplicationId(BuildConfig.FIREBASE_APP_ID)
-                    .setProjectId(BuildConfig.FIREBASE_PROJECT_ID)
-                    .build()
-            )
+            val app = FirebaseApp.getInstance()
             analytics = FirebaseAnalytics.getInstance(context)
             // Touching the instance installs Crashlytics' uncaught-exception handler.
             FirebaseCrashlytics.getInstance()

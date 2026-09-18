@@ -70,12 +70,17 @@ internal fun StartScreen(
     onPlay: () -> Unit,
     onWelcomeDismissed: () -> Unit,
     onDebugResetWelcome: () -> Unit,
-    onClaimDailyReward: () -> Unit
+    onClaimDailyReward: () -> Unit,
+    onSignUp: (email: String, password: String) -> Unit,
+    onSignIn: (email: String, password: String) -> Unit,
+    onSignOut: () -> Unit,
+    onDismissAuthError: () -> Unit
 ) {
     val accent = LocalPaletteColors.current.accent
     var showThemePicker by remember { mutableStateOf(false) }
     var showBoardSizePicker by remember { mutableStateOf(false) }
     var showStats by remember { mutableStateOf(false) }
+    var showAccount by remember { mutableStateOf(false) }
     // Evaluated once, the first time this composable enters composition (i.e. once per real
     // app launch, or whenever the player navigates back here from a game -- see
     // GameUiState.hasSeenWelcome for why that's safe): auto-open the walkthrough exactly once
@@ -185,6 +190,11 @@ internal fun StartScreen(
                     contentDescription = "How to Play",
                     onClick = { showWelcome = true }
                 )
+                StartScreenIconButton(
+                    label = if (uiState.signedInUserId != null) "☁️" else "🔒",
+                    contentDescription = if (uiState.signedInUserId != null) "Cloud sync on" else "Sign in",
+                    onClick = { showAccount = true }
+                )
             }
             Text(
                 text = "CHOOSE HOW YOU WANT TO PLAY",
@@ -241,6 +251,18 @@ internal fun StartScreen(
             level = uiState.level,
             onSelect = onSelectBoardSize,
             onDismiss = { showBoardSizePicker = false }
+        )
+    }
+    if (showAccount) {
+        AccountDialog(
+            signedInUserId = uiState.signedInUserId,
+            authBusy = uiState.authBusy,
+            authError = uiState.authError,
+            onSignUp = onSignUp,
+            onSignIn = onSignIn,
+            onSignOut = onSignOut,
+            onDismissError = onDismissAuthError,
+            onDismiss = { showAccount = false }
         )
     }
     if (showStats) {

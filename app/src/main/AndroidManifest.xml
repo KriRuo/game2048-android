@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <application
         android:allowBackup="true"
@@ -9,16 +8,6 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.Game2048">
-
-        <!-- This project skips the google-services Gradle plugin (see app/build.gradle.kts),
-             so there's no generated config for Firebase's normal auto-init to read. Firebase is
-             instead initialized manually and conditionally by AppAnalytics.kt, so this provider
-             is removed to stop the library's own auto-init from running (and failing) first. -->
-        <provider
-            android:name="com.google.firebase.provider.FirebaseInitProvider"
-            android:authorities="${applicationId}.firebaseinitprovider"
-            tools:node="remove" />
-
         <activity
             android:name=".MainActivity"
             android:exported="true"

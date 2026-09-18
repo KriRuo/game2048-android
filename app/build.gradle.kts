@@ -4,6 +4,25 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    // google-services is NOT listed here -- see the `apply(plugin = ...)` call below. The
+    // `plugins {}` block is evaluated in an isolated scope, statically, before the rest of this
+    // script runs, and can't contain conditional logic referencing any external class (not even
+    // java.io.File) -- only plugin id()/version()/apply-false literals.
+}
+
+// Firebase (Analytics/Crashlytics/Auth/Firestore) needs the google-services plugin applied,
+// which in turn needs app/google-services.json (gitignored -- fetched via
+// `firebase apps:sdkconfig ANDROID <APP_ID> --project <PROJECT_ID>`, never committed). Without
+// it, the plugin is simply not applied and Firebase is left uninitialized -- every call in
+// AppAnalytics.kt/AuthRepository.kt/CloudSyncRepository.kt is defensively guarded for that case,
+// so a fresh clone or CI (neither of which has this file) still builds and runs normally. This
+// `apply(plugin = ...)` (old-style, dynamic) form is used instead of listing it in `plugins {}`
+// above precisely because it needs to be conditional -- see the comment there. The plugin
+// itself is registered (version pinned, not yet applied) via `apply false` in the root
+// build.gradle.kts, which is what makes the bare id below resolvable here.
+val googleServicesFile = file("google-services.json")
+if (googleServicesFile.exists()) {
+    apply(plugin = "com.google.gms.google-services")
 }
 
 // Release signing is intentionally NOT stored in this repo. Drop a keystore.properties
@@ -14,20 +33,6 @@ val keystorePropertiesFile = rootProject.file("keystore.properties")
 val keystoreProperties = Properties().apply {
     if (keystorePropertiesFile.exists()) {
         keystorePropertiesFile.inputStream().use { load(it) }
-    }
-}
-
-// Firebase Analytics/Crashlytics config is intentionally NOT stored in this repo, and this
-// project deliberately skips the google-services Gradle plugin (which would require committing
-// a google-services.json). Drop a firebase.properties file (gitignored) next to this build file
-// with: apiKey, applicationId (the Firebase *App* ID, e.g. "1:123:android:abc" -- not this
-// module's Android applicationId above), projectId -- all read from a Firebase project's
-// Project Settings > General > Your apps. Without it, FIREBASE_ENABLED is false and
-// AppAnalytics.init() no-ops entirely; see analytics/AppAnalytics.kt.
-val firebasePropertiesFile = rootProject.file("firebase.properties")
-val firebaseProperties = Properties().apply {
-    if (firebasePropertiesFile.exists()) {
-        firebasePropertiesFile.inputStream().use { load(it) }
     }
 }
 
@@ -47,10 +52,9 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        buildConfigField("boolean", "FIREBASE_ENABLED", firebasePropertiesFile.exists().toString())
-        buildConfigField("String", "FIREBASE_API_KEY", "\"${firebaseProperties.getProperty("apiKey", "")}\"")
-        buildConfigField("String", "FIREBASE_APP_ID", "\"${firebaseProperties.getProperty("applicationId", "")}\"")
-        buildConfigField("String", "FIREBASE_PROJECT_ID", "\"${firebaseProperties.getProperty("projectId", "")}\"")
+        // So app code can tell whether Firebase is actually configured in this build without
+        // reaching into Gradle internals -- see AppAnalytics.kt/AuthRepository.kt.
+        buildConfigField("boolean", "FIREBASE_ENABLED", googleServicesFile.exists().toString())
     }
 
     signingConfigs {
@@ -121,13 +125,19 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.6")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
-    // Always present so AppAnalytics.kt compiles regardless of whether firebase.properties
-    // exists -- initialization itself is config-gated at runtime (FIREBASE_ENABLED above), and
-    // the google-services plugin (which would need a committed google-services.json) is
-    // deliberately not used at all; see AppAnalytics.kt and AndroidManifest.xml.
+    // Always present so Firebase-using code compiles regardless of whether
+    // google-services.json exists -- see the comment on googleServicesFile above.
+    // Note: NOT the latest BoM (34.19.0 as of this writing) -- its firebase-auth/
+    // play-services-measurement artifacts are compiled against Kotlin 2.2/2.3 metadata, which
+    // this project's Kotlin plugin (pinned to 2.0.21 in the root build.gradle.kts, alongside
+    // AGP/Compose-compiler versions that pair with it) can't read. 33.5.1 is the newest BoM
+    // verified to compile cleanly against that pin.
     implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
     implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.firebase:firebase-crashlytics")
+    implementation("com.google.firebase:firebase-auth")
+    implementation("com.google.firebase:firebase-firestore")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
 
     testImplementation("junit:junit:4.13.2")
 
