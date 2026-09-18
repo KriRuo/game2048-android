@@ -85,6 +85,12 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // Firestore/Auth's gRPC transport touches java.time classes that only exist natively on
+        // API 26+; minSdk here is 24, so without desugaring, loading those classes on an
+        // API 24/25 device throws immediately (NoClassDefFoundError on java.time.*) the moment
+        // Firebase code runs -- a plausible cause of a crash that only shows up with Firebase
+        // present and that no try/catch of ours would have a chance to run before.
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -138,6 +144,7 @@ dependencies {
     implementation("com.google.firebase:firebase-auth")
     implementation("com.google.firebase:firebase-firestore")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 
     testImplementation("junit:junit:4.13.2")
 
