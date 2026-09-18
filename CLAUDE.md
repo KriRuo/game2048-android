@@ -20,27 +20,41 @@ Two PRs open against `master`, unmerged:
   2. Fix attempt 1 (`7e192aa`): `AuthRepository`/`CloudSyncRepository` had `by lazy` Firebase
      properties that could throw *outside* their callers' try/catch. Real bug, fixed it —
      but retested on-device and **still crashed**, same symptom.
-  3. Fix attempt 2 (`a0a4c44`, latest): the real suspect — Firebase's own automatic
-     `FirebaseInitProvider` startup hook runs before any app code at all (before
-     `MainActivity`/`GameViewModel`), so nothing in the app could ever catch a failure there.
-     Removed via `tools:node="remove"`; Firebase now only initializes manually inside
-     `AppAnalytics.init()`'s existing try/catch (see below). **Sent to the user to test on
-     their phone — result not yet known as of this note.**
-  - No way to reproduce this in the Claude Code sandbox: no `/dev/kvm` (no Android emulator
-    possible), and Crashlytics's own API returned 404 for this app (no report had ever landed —
-    consistent with the crash happening before Crashlytics' handler could install). Diagnosis
-    so far is entirely from code review + the user's answers to "when does it crash"/"adb
-    access" (instant, no screen ever appears; no adb access available).
-  - **Next step**: ask whether the latest build still crashes. If yes, stop guessing from code
-    alone — get real diagnostics (adb logcat, or at minimum a screenshot of any crash dialog)
-    before trying another fix. If it's fixed, the PR's remaining unverified items are the
-    actual sign-up/sign-in flow and a real cross-device sync round-trip end-to-end.
-  - **Recipe for sending a test APK** (used repeatedly this session): worktree the branch →
+  3. Fix attempt 2 (`a0a4c44`): removed Firebase's automatic `FirebaseInitProvider` startup
+     hook (runs before any app code, before any try/catch we control) via `tools:node="remove"`,
+     moving all init into `AppAnalytics.init()`'s existing try/catch. **Retested on-device —
+     confirmed by the user this session: still crashed, same symptom.**
+  4. Fix attempt 3 (`3706f97`, latest): a different theory — `firebase-firestore`/`firebase-auth`
+     pull in gRPC code that touches `java.time` classes only present natively on API 26+, and
+     this app's `minSdk` is 24 with no core library desugaring enabled. On an API 24/25 device
+     that's a `NoClassDefFoundError` the instant Firebase code runs, which explains a crash that
+     survives attempt 2's fix. Enabled `isCoreLibraryDesugaringEnabled` + `desugar_jdk_libs`.
+     Also added, since attempt 2 already showed a plausible-looking fix can still be wrong on
+     real hardware: `Game2048Application` installs a default uncaught-exception handler that
+     saves the crash stack trace to SharedPreferences, and `MainActivity` shows it as a
+     copyable `AlertDialog` (plain framework view, not Compose) on the very next launch — a way
+     to get a real stack trace off the device without adb. **Built with the real project's
+     `google-services.json` and sent to the user as a test APK this session — result not yet
+     known as of this note.**
+  - Still no adb access and Crashlytics has never received a report for this app (checked via
+    `crashlytics_get_report`/`topIssues` this session, zero results) — consistent with the crash
+    happening before Crashlytics' handler installs, or before the app can even flush the report
+    on a subsequent launch since every launch crashes. The on-device dialog added in attempt 3
+    is the fallback for this if attempt 3's actual fix doesn't fully resolve it.
+  - **Next step**: ask whether the latest build (with desugaring) still crashes.
+    - If no: the PR's remaining unverified items are the actual sign-up/sign-in flow and a real
+      cross-device sync round-trip end-to-end.
+    - If yes: it should now show the on-device crash dialog on the *next* launch after the
+      crash — ask for a screenshot or the copied text of that dialog instead of guessing again.
+  - **Recipe for sending a test APK**: this sandbox has no Android SDK by default (`ANDROID_HOME`/
+    `local.properties` unset) — install one via `sdkmanager` (cmdline-tools, `platform-tools`,
+    `platforms;android-35`, `build-tools;35.0.0`; needs `yes | sdkmanager --licenses` first) and
+    write `sdk.dir=<path>` to `local.properties`, done once per fresh sandbox. Then:
     `firebase_update_environment` (project_dir/active_project/active_user_account) →
     `firebase_get_sdk_config` for the Android app ID → write that JSON to
-    `app/google-services.json` → `./gradlew assembleDebug` → `SendUserFile` the resulting APK.
-    Firebase CLI is already logged in as `kristoffer.ruohonen@gmail.com` for project
-    `game2048-47897` in this environment (see "Firebase backend" below) — no need to redo login.
+    `app/google-services.json` (gitignored — delete it again after the build, never commit it)
+    → `./gradlew assembleDebug` → `SendUserFile` the resulting APK. Firebase CLI account:
+    `kristoffer.ruohonen@gmail.com` for project `game2048-47897` (see "Firebase backend" below).
 
 ## Commands
 
