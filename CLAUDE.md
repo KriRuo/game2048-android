@@ -14,8 +14,11 @@ Two PRs open against `master`, unmerged:
 - **PR #1** (`claude/chat-session-m8ggzs`): Tile Patterns cosmetic axis. Reviewed, Copilot
   findings addressed, CI green — just needs a merge decision, otherwise done.
 - **PR #2** (`feature/analytics-crashlytics`, this branch): the Firebase backend described
-  below (Analytics, Crashlytics, Auth, Firestore). **Mid-debugging a real crash-on-launch found
-  during phone testing — not yet confirmed fixed as of the last commit here.** Timeline:
+  below (Analytics, Crashlytics, Auth, Firestore). Had a real crash-on-launch found during
+  phone testing — **confirmed fixed by the user this session, after fix attempt 3 below.**
+  Remaining before merge: the actual sign-up/sign-in flow and a real cross-device sync
+  round-trip haven't been exercised end-to-end yet (still unchecked in the PR's test plan).
+  Crash timeline, for context:
   1. First real-device build (commit `9242351`) crashed instantly, no screen ever drawn.
   2. Fix attempt 1 (`7e192aa`): `AuthRepository`/`CloudSyncRepository` had `by lazy` Firebase
      properties that could throw *outside* their callers' try/catch. Real bug, fixed it —
@@ -34,18 +37,13 @@ Two PRs open against `master`, unmerged:
      saves the crash stack trace to SharedPreferences, and `MainActivity` shows it as a
      copyable `AlertDialog` (plain framework view, not Compose) on the very next launch — a way
      to get a real stack trace off the device without adb. **Built with the real project's
-     `google-services.json` and sent to the user as a test APK this session — result not yet
-     known as of this note.**
-  - Still no adb access and Crashlytics has never received a report for this app (checked via
-    `crashlytics_get_report`/`topIssues` this session, zero results) — consistent with the crash
-    happening before Crashlytics' handler installs, or before the app can even flush the report
-    on a subsequent launch since every launch crashes. The on-device dialog added in attempt 3
-    is the fallback for this if attempt 3's actual fix doesn't fully resolve it.
-  - **Next step**: ask whether the latest build (with desugaring) still crashes.
-    - If no: the PR's remaining unverified items are the actual sign-up/sign-in flow and a real
-      cross-device sync round-trip end-to-end.
-    - If yes: it should now show the on-device crash dialog on the *next* launch after the
-      crash — ask for a screenshot or the copied text of that dialog instead of guessing again.
+     `google-services.json` and sent to the user as a test APK this session — confirmed working
+     on-device.** The core library desugaring gap was the real root cause; the crash-capture
+     dialog in `Game2048Application`/`MainActivity` is now just standing infrastructure (never
+     triggered, nothing to remove).
+  - **Next step**: sign-up/sign-in flow and a real cross-device sync round-trip are still
+    unverified end-to-end — exercise those on-device, then this PR is ready for a merge
+    decision alongside PR #1.
   - **Recipe for sending a test APK**: this sandbox has no Android SDK by default (`ANDROID_HOME`/
     `local.properties` unset) — install one via `sdkmanager` (cmdline-tools, `platform-tools`,
     `platforms;android-35`, `build-tools;35.0.0`; needs `yes | sdkmanager --licenses` first) and
