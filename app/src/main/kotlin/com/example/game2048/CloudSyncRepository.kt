@@ -1,10 +1,13 @@
 package com.example.game2048
 
+import android.util.Log
 import com.example.game2048.logic.BoardSizeOption
 import com.example.game2048.logic.GameMode
 import com.example.game2048.logic.TilePalette
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.tasks.await
+
+private const val TAG = "CloudSyncRepository"
 
 /** This project's Firestore database is NOT the "(default)" one -- see CLAUDE.md -- so every
  *  access must target this name explicitly via the [com.google.firebase.firestore.firestore]
@@ -40,8 +43,16 @@ data class CloudProgress(
  * never something a failure here should visibly disrupt.
  */
 object CloudSyncRepository {
+    // Never throws -- see AuthRepository.auth for why this matters (a throwing lazy property
+    // crashes every caller, not just the one that happens to be inside a try/catch).
     private val db by lazy {
-        if (BuildConfig.FIREBASE_ENABLED) FirebaseFirestore.getInstance(FIRESTORE_DATABASE_ID) else null
+        if (!BuildConfig.FIREBASE_ENABLED) return@lazy null
+        try {
+            FirebaseFirestore.getInstance(FIRESTORE_DATABASE_ID)
+        } catch (t: Throwable) {
+            Log.w(TAG, "Firestore unavailable, cloud sync disabled for this session", t)
+            null
+        }
     }
 
     suspend fun pull(uid: String): CloudProgress? {
