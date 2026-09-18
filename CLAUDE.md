@@ -25,6 +25,16 @@ Release signing reads an optional, gitignored `keystore.properties` at the repo 
 (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`) — never commit a keystore or its
 credentials.
 
+Firebase Analytics/Crashlytics follows the same optional-file pattern: an optional, gitignored
+`firebase.properties` at the repo root (`apiKey`, `applicationId` — the Firebase *App* ID, not
+this module's Android `applicationId` above — and `projectId`, from a Firebase project's Project
+Settings). No file present means `BuildConfig.FIREBASE_ENABLED` is false and `AppAnalytics.init()`
+(called once from `GameViewModel`'s `init` block) no-ops entirely — true for every fresh clone
+and for CI today. This project deliberately skips the `google-services` Gradle plugin (which
+would require committing a `google-services.json`) — see `AppAnalytics.kt` and the removed
+`FirebaseInitProvider` in `AndroidManifest.xml` for how Firebase is instead configured manually
+from those `BuildConfig` fields.
+
 ## CI/CD
 
 Two workflows under `.github/workflows/`:
@@ -74,10 +84,16 @@ left, roughly in order:
    variables → Actions, if not already done (the `release-build.yml` workflow will fail
    without them — check that first if it's red).
 3. Create the Google Play Console account ($25, identity verification).
-4. Store listing requirements: privacy policy URL, app icon/feature graphic/screenshots,
-   content rating questionnaire, data safety form (likely "no data collected" — everything is
+4. Create a Firebase project (console.firebase.google.com, same Google account ideally) and add
+   an Android app to it with `applicationId` `com.kriruo.game2048` — copy its apiKey/App
+   ID/projectId into a local `firebase.properties` (see above) to turn on Analytics/Crashlytics.
+   Optional, but do it before the store listing's data safety form (next step) since it changes
+   the answer.
+5. Store listing requirements: privacy policy URL, app icon/feature graphic/screenshots,
+   content rating questionnaire, data safety form (no longer "no data collected" once step 4 is
+   done — Firebase Analytics collects app-usage events; still no PII, everything else stays in
    local `SharedPreferences`).
-5. First `.aab` upload to Play Console must be manual (Google requires this before any API
+6. First `.aab` upload to Play Console must be manual (Google requires this before any API
    automation can target that app listing) — grab the artifact from a `release-build.yml` run.
 
 **Next technical step once an app exists in Play Console:**

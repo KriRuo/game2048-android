@@ -153,6 +153,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private val engine = Game2048Engine()
     private val prefs = application.getSharedPreferences(PREFS_NAME, Application.MODE_PRIVATE)
 
+    init {
+        // No-ops entirely unless firebase.properties was present at build time -- see
+        // AppAnalytics.kt.
+        AppAnalytics.init(application)
+    }
+
     // Cached in memory so a move doesn't re-read them from disk every time. Declared before
     // _uiState because buildInitialState() reads them.
     private var cumulativeScore: Long = prefs.getLong(KEY_CUMULATIVE_SCORE, 0L)
@@ -178,6 +184,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             totalMerges += result.mergedTileIds.size
             val highestTile = result.state.tiles.maxOfOrNull { it.value } ?: 0
             if (highestTile > highestTileEver) highestTileEver = highestTile
+            val level = LevelTracker.levelForCumulativeScore(cumulativeScore)
+            if (level > current.level) {
+                AppAnalytics.logLevelUp(level)
+                ThemeUnlocks.newlyUnlocked(current.levelAtGameStart, level)?.let { AppAnalytics.logThemeUnlocked(it.id) }
+                BoardSizeUnlocks.newlyUnlocked(current.levelAtGameStart, level)?.let { AppAnalytics.logBoardSizeUnlocked(it.id) }
+            }
             persist(result.state, includeBest = bestChanged)
             _uiState.value = current.copy(
                 game = result.state,
@@ -187,7 +199,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 previousTilesById = current.game.tiles.associateBy { it.id },
                 lastScoreGained = gained,
                 moveToken = current.moveToken + 1,
-                level = LevelTracker.levelForCumulativeScore(cumulativeScore),
+                level = level,
                 levelProgress = LevelTracker.progressToNextLevel(cumulativeScore),
                 cumulativeScore = cumulativeScore,
                 undoState = current.game,
@@ -235,6 +247,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val current = _uiState.value
         val level = current.level
         val boardSize = if (BoardSizeUnlocks.isUnlocked(selectedBoardSize, level)) selectedBoardSize.size else BoardSizeOption.DEFAULT.size
+        AppAnalytics.logGameStarted()
         gamesPlayed += 1
         val fresh = freshGame(best = bestScore, boardSize = boardSize).copy(
             level = level,
@@ -452,6 +465,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         if (bestChanged) bestScore = result.state.best
         val highestTile = result.state.tiles.maxOfOrNull { it.value } ?: 0
         if (highestTile > highestTileEver) highestTileEver = highestTile
+        val level = LevelTracker.levelForCumulativeScore(cumulativeScore)
+        if (level > current.level) {
+            AppAnalytics.logLevelUp(level)
+            ThemeUnlocks.newlyUnlocked(current.levelAtGameStart, level)?.let { AppAnalytics.logThemeUnlocked(it.id) }
+            BoardSizeUnlocks.newlyUnlocked(current.levelAtGameStart, level)?.let { AppAnalytics.logBoardSizeUnlocked(it.id) }
+        }
         persist(result.state, includeBest = bestChanged)
         _uiState.value = current.copy(
             game = result.state,
@@ -461,7 +480,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             previousTilesById = current.game.tiles.associateBy { it.id },
             lastScoreGained = gained,
             moveToken = current.moveToken + 1,
-            level = LevelTracker.levelForCumulativeScore(cumulativeScore),
+            level = level,
             levelProgress = LevelTracker.progressToNextLevel(cumulativeScore),
             cumulativeScore = cumulativeScore,
             undoState = current.game,
@@ -546,11 +565,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         if (savedGame == null) {
             gamesPlayed += 1
             prefs.edit().putInt(KEY_GAMES_PLAYED, gamesPlayed).commit()
+            AppAnalytics.logGameStarted()
         }
         val base = savedGame ?: freshGame()
         val previousStreak = loadStreak()
         val updatedStreak = StreakTracker.onAppOpened(previousStreak, todayEpochDay())
         val milestone = StreakTracker.newlyReachedMilestone(previousStreak, updatedStreak)
+        if (milestone != null) AppAnalytics.logStreakMilestone(milestone)
         saveStreak(updatedStreak)
         // A new day was just recorded (as opposed to this being a same-day reopen, where
         // onAppOpened leaves lastPlayedEpochDay unchanged) -- offer today's claimable reward.
