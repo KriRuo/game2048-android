@@ -7,6 +7,41 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Native Android 2048 in Kotlin + Jetpack Compose (Material 3), `applicationId`
 `com.kriruo.game2048`. compileSdk/targetSdk 35, minSdk 24, JVM target 17.
 
+## Current status — where to pick up
+
+Two PRs open against `master`, unmerged:
+
+- **PR #1** (`claude/chat-session-m8ggzs`): Tile Patterns cosmetic axis. Reviewed, Copilot
+  findings addressed, CI green — just needs a merge decision, otherwise done.
+- **PR #2** (`feature/analytics-crashlytics`, this branch): the Firebase backend described
+  below (Analytics, Crashlytics, Auth, Firestore). **Mid-debugging a real crash-on-launch found
+  during phone testing — not yet confirmed fixed as of the last commit here.** Timeline:
+  1. First real-device build (commit `9242351`) crashed instantly, no screen ever drawn.
+  2. Fix attempt 1 (`7e192aa`): `AuthRepository`/`CloudSyncRepository` had `by lazy` Firebase
+     properties that could throw *outside* their callers' try/catch. Real bug, fixed it —
+     but retested on-device and **still crashed**, same symptom.
+  3. Fix attempt 2 (`a0a4c44`, latest): the real suspect — Firebase's own automatic
+     `FirebaseInitProvider` startup hook runs before any app code at all (before
+     `MainActivity`/`GameViewModel`), so nothing in the app could ever catch a failure there.
+     Removed via `tools:node="remove"`; Firebase now only initializes manually inside
+     `AppAnalytics.init()`'s existing try/catch (see below). **Sent to the user to test on
+     their phone — result not yet known as of this note.**
+  - No way to reproduce this in the Claude Code sandbox: no `/dev/kvm` (no Android emulator
+    possible), and Crashlytics's own API returned 404 for this app (no report had ever landed —
+    consistent with the crash happening before Crashlytics' handler could install). Diagnosis
+    so far is entirely from code review + the user's answers to "when does it crash"/"adb
+    access" (instant, no screen ever appears; no adb access available).
+  - **Next step**: ask whether the latest build still crashes. If yes, stop guessing from code
+    alone — get real diagnostics (adb logcat, or at minimum a screenshot of any crash dialog)
+    before trying another fix. If it's fixed, the PR's remaining unverified items are the
+    actual sign-up/sign-in flow and a real cross-device sync round-trip end-to-end.
+  - **Recipe for sending a test APK** (used repeatedly this session): worktree the branch →
+    `firebase_update_environment` (project_dir/active_project/active_user_account) →
+    `firebase_get_sdk_config` for the Android app ID → write that JSON to
+    `app/google-services.json` → `./gradlew assembleDebug` → `SendUserFile` the resulting APK.
+    Firebase CLI is already logged in as `kristoffer.ruohonen@gmail.com` for project
+    `game2048-47897` in this environment (see "Firebase backend" below) — no need to redo login.
+
 ## Commands
 
 ```
