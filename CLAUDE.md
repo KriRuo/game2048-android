@@ -36,6 +36,16 @@ fresh clone and for CI today, verified by building with the file removed. Fetch 
 `firebase apps:sdkconfig ANDROID <APP_ID> --project <PROJECT_ID>` (see "Firebase backend"
 below) rather than the Firebase Console UI.
 
+Firebase's own automatic startup hook (`FirebaseInitProvider`) is deliberately removed in
+`AndroidManifest.xml` (`tools:node="remove"`) even though `google-services.json` is present in
+a real build -- it runs before any app code at all (before `MainActivity`, before
+`GameViewModel`), so a bad interaction there crashes the app before a single screen is drawn,
+with no try/catch of ours able to catch it (this is exactly what caused a real crash-on-launch
+during phone testing). `AppAnalytics.init()` is the *only* place Firebase actually initializes
+instead, reading the plugin-generated config via `FirebaseOptions.fromResource(context)` and
+calling `FirebaseApp.initializeApp(...)` manually, entirely inside its own try/catch, after the
+app has already started.
+
 ## Firebase backend
 
 Project `game2048-47897` (Firebase Auth + Cloud Firestore only — Analytics/Crashlytics don't

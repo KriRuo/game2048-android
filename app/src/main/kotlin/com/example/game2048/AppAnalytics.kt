@@ -3,16 +3,22 @@ package com.example.game2048
 import android.content.Context
 import android.util.Log
 import com.google.firebase.FirebaseApp
+import com.google.firebase.FirebaseOptions
 import com.google.firebase.analytics.FirebaseAnalytics
 import com.google.firebase.crashlytics.FirebaseCrashlytics
 
 /**
  * Thin, fail-safe wrapper around Firebase Analytics/Crashlytics. Configuration comes from
  * app/google-services.json (gitignored, fetched via the Firebase CLI -- see the comment on
- * `googleServicesFile` in app/build.gradle.kts) via the standard google-services Gradle plugin
- * and its normal auto-init. [BuildConfig.FIREBASE_ENABLED] mirrors whether that file existed at
- * build time, so every function here stays safe to call unconditionally even when it didn't
- * (true for every fresh clone of this repo and for CI today).
+ * `googleServicesFile` in app/build.gradle.kts) via the standard google-services Gradle plugin,
+ * which generates the resources [FirebaseOptions.fromResource] reads below -- but Firebase's
+ * own *automatic* startup hook (`FirebaseInitProvider`) is deliberately removed in
+ * AndroidManifest.xml, because it runs before any app code at all (before MainActivity, before
+ * GameViewModel, before any try/catch we control) and a bad interaction there can crash the app
+ * before a single screen is ever drawn. [init] is the *only* place Firebase actually gets
+ * initialized, entirely inside this function's own try/catch. [BuildConfig.FIREBASE_ENABLED]
+ * mirrors whether google-services.json existed at build time, so every function here stays safe
+ * to call unconditionally even when it didn't (true for every fresh clone and for CI today).
  */
 object AppAnalytics {
     private const val TAG = "AppAnalytics"
@@ -27,7 +33,10 @@ object AppAnalytics {
         initialized = true
         if (!BuildConfig.FIREBASE_ENABLED) return
         try {
-            val app = FirebaseApp.getInstance()
+            val app = FirebaseApp.getApps(context).firstOrNull() ?: run {
+                val options = FirebaseOptions.fromResource(context) ?: return
+                FirebaseApp.initializeApp(context, options)
+            }
             analytics = FirebaseAnalytics.getInstance(context)
             // Touching the instance installs Crashlytics' uncaught-exception handler.
             FirebaseCrashlytics.getInstance()
