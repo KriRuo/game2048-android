@@ -213,6 +213,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             AuthRepository.currentUserId.collect { uid ->
                 _uiState.value = _uiState.value.copy(signedInUserId = uid)
+                AppAnalytics.setUserId(uid)
                 if (uid != null) applyCloudProgressIfSignedIn(uid)
             }
         }
@@ -234,6 +235,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
                 AppAnalytics.logLevelUp(level)
                 ThemeUnlocks.newlyUnlocked(current.levelAtGameStart, level)?.let { AppAnalytics.logThemeUnlocked(it.id) }
                 BoardSizeUnlocks.newlyUnlocked(current.levelAtGameStart, level)?.let { AppAnalytics.logBoardSizeUnlocked(it.id) }
+            }
+            if (!current.game.isGameOver && result.state.isGameOver) {
+                AppAnalytics.logGameOver(result.state.score, level)
             }
             persist(result.state, includeBest = bestChanged)
             _uiState.value = current.copy(
@@ -393,6 +397,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val current = _uiState.value
         if (current.gameMode != GameMode.EXTENDED || current.rotatesRemaining <= 0) return
         val result = engine.rotateBoard(current.game)
+        AppAnalytics.logJokerUsed("rotate")
         persist(result.state, includeBest = false)
         _uiState.value = current.copy(
             game = result.state,
@@ -448,6 +453,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val current = _uiState.value
         val result = engine.teleportTile(current.game, tileId, row, col)
         if (!result.applied) return
+        AppAnalytics.logJokerUsed("teleport")
+        if (!current.game.isGameOver && result.state.isGameOver) {
+            AppAnalytics.logGameOver(result.state.score, current.level)
+        }
         persist(result.state, includeBest = false)
         _uiState.value = current.copy(
             game = result.state,
@@ -468,6 +477,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val current = _uiState.value
         val result = engine.swapTiles(current.game, tileId1, tileId2)
         if (!result.applied) return
+        AppAnalytics.logJokerUsed("swap")
+        if (!current.game.isGameOver && result.state.isGameOver) {
+            AppAnalytics.logGameOver(result.state.score, current.level)
+        }
         persist(result.state, includeBest = false)
         _uiState.value = current.copy(
             game = result.state,
@@ -488,6 +501,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val current = _uiState.value
         val result = engine.bombTile(current.game, tileId)
         if (!result.applied) return
+        AppAnalytics.logJokerUsed("bomb")
+        if (!current.game.isGameOver && result.state.isGameOver) {
+            AppAnalytics.logGameOver(result.state.score, current.level)
+        }
         persist(result.state, includeBest = false)
         _uiState.value = current.copy(
             game = result.state,
@@ -511,6 +528,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val current = _uiState.value
         val result = engine.doubleTile(current.game, tileId)
         if (!result.applied) return
+        AppAnalytics.logJokerUsed("double")
         val gained = result.state.score - current.game.score
         cumulativeScore += gained
         val bestChanged = result.state.best > bestScore
@@ -522,6 +540,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             AppAnalytics.logLevelUp(level)
             ThemeUnlocks.newlyUnlocked(current.levelAtGameStart, level)?.let { AppAnalytics.logThemeUnlocked(it.id) }
             BoardSizeUnlocks.newlyUnlocked(current.levelAtGameStart, level)?.let { AppAnalytics.logBoardSizeUnlocked(it.id) }
+        }
+        if (!current.game.isGameOver && result.state.isGameOver) {
+            AppAnalytics.logGameOver(result.state.score, level)
         }
         persist(result.state, includeBest = bestChanged)
         _uiState.value = current.copy(
@@ -888,8 +909,15 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = current.copy(authBusy = true, authError = null, passwordResetSent = false)
         viewModelScope.launch {
             when (val outcome = AuthRepository.signUp(trimmedEmail, password)) {
-                is AuthRepository.Outcome.Success ->
+                is AuthRepository.Outcome.Success -> {
+                    // Sets the uid synchronously from the outcome we already have, rather than
+                    // waiting on the currentUserId collector's async AuthStateListener callback,
+                    // which could otherwise still be pending when logSignUp() fires -- that race
+                    // would log this event anonymously (or under a previously signed-in uid).
+                    AppAnalytics.setUserId(outcome.uid)
+                    AppAnalytics.logSignUp()
                     _uiState.value = _uiState.value.copy(authBusy = false, authError = null)
+                }
                 is AuthRepository.Outcome.Failure ->
                     _uiState.value = _uiState.value.copy(authBusy = false, authError = outcome.message)
             }
@@ -907,8 +935,12 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = current.copy(authBusy = true, authError = null, passwordResetSent = false)
         viewModelScope.launch {
             when (val outcome = AuthRepository.signIn(trimmedEmail, password)) {
-                is AuthRepository.Outcome.Success ->
+                is AuthRepository.Outcome.Success -> {
+                    // Same race as onSignUp above -- set the uid from the outcome before logging.
+                    AppAnalytics.setUserId(outcome.uid)
+                    AppAnalytics.logSignIn()
                     _uiState.value = _uiState.value.copy(authBusy = false, authError = null)
+                }
                 is AuthRepository.Outcome.Failure ->
                     _uiState.value = _uiState.value.copy(authBusy = false, authError = outcome.message)
             }
