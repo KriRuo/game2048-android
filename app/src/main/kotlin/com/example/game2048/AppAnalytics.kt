@@ -73,6 +73,26 @@ object AppAnalytics {
 
     fun logBoardSizeUnlocked(boardSizeId: String) = logEvent("board_size_unlocked", mapOf("board_size_id" to boardSizeId))
 
+    fun logSignUp() = logEvent("sign_up")
+
+    fun logSignIn() = logEvent("sign_in")
+
+    fun logGameOver(score: Int, level: Int) = logEvent("game_over", mapOf("score" to score, "level" to level))
+
+    fun logJokerUsed(jokerId: String) = logEvent("joker_used", mapOf("joker_id" to jokerId))
+
+    /** Ties subsequent Crashlytics reports (and future events) to the signed-in account, or
+     *  clears that link on sign-out -- otherwise every crash is anonymous per device, with no
+     *  way to correlate a specific tester's bug report to a report in the dashboard. */
+    fun setUserId(uid: String?) {
+        if (!BuildConfig.FIREBASE_ENABLED) return
+        try {
+            FirebaseCrashlytics.getInstance().setUserId(uid ?: "")
+        } catch (_: Throwable) {
+            // Crashlytics itself not initialized -- nothing to do.
+        }
+    }
+
     /** For a future caught-but-worth-knowing-about condition; not wired to anything yet. */
     fun recordNonFatal(t: Throwable) {
         if (!BuildConfig.FIREBASE_ENABLED) return
