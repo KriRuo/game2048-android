@@ -43,7 +43,7 @@ private val WELCOME_PAGES = listOf(
         body = "In Extended mode, tap a Joker button then tap a tile to use it: Teleport " +
             "moves a tile, Swap exchanges two, Bomb removes one, Double doubles it in place. " +
             "Rotate spins the whole board instantly, no target needed. Each Joker gives you " +
-            "2 uses per game."
+            "1 use per game."
     ),
     WelcomePage(
         title = "Level up to unlock more",

@@ -59,11 +59,11 @@ const val MAX_UNDOS = 3
 /** Uses allowed per game for each Joker (see [GameUiState.teleportsRemaining] and friends),
  *  reset to this on New Game -- same not-persisted-across-restart reasoning as [MAX_UNDOS].
  *  Not private, for the same dash-indicator reason. */
-const val MAX_TELEPORTS = 2
-const val MAX_SWAPS = 2
-const val MAX_BOMBS = 2
-const val MAX_DOUBLES = 2
-const val MAX_ROTATES = 2
+const val MAX_TELEPORTS = 1
+const val MAX_SWAPS = 1
+const val MAX_BOMBS = 1
+const val MAX_DOUBLES = 1
+const val MAX_ROTATES = 1
 
 /**
  * Everything the UI needs to render one frame of the game, including enough detail about
