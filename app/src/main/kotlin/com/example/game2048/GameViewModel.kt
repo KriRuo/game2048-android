@@ -841,9 +841,21 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun onSignUp(email: String, password: String) {
         val current = _uiState.value
         if (current.authBusy) return
+        val trimmedEmail = email.trim()
+        if (trimmedEmail.isEmpty() || password.isEmpty()) {
+            _uiState.value = current.copy(authError = "Enter your email and password.", passwordResetSent = false)
+            return
+        }
+        // Matches Firebase's own minimum -- catching it here skips a network round trip for an
+        // outcome that's already certain, but AuthRepository.signUp still maps the same error
+        // if this check is ever out of sync with Firebase's actual requirement.
+        if (password.length < 6) {
+            _uiState.value = current.copy(authError = "Password must be at least 6 characters.", passwordResetSent = false)
+            return
+        }
         _uiState.value = current.copy(authBusy = true, authError = null, passwordResetSent = false)
         viewModelScope.launch {
-            when (val outcome = AuthRepository.signUp(email, password)) {
+            when (val outcome = AuthRepository.signUp(trimmedEmail, password)) {
                 is AuthRepository.Outcome.Success ->
                     _uiState.value = _uiState.value.copy(authBusy = false, authError = null)
                 is AuthRepository.Outcome.Failure ->
@@ -855,9 +867,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun onSignIn(email: String, password: String) {
         val current = _uiState.value
         if (current.authBusy) return
+        val trimmedEmail = email.trim()
+        if (trimmedEmail.isEmpty() || password.isEmpty()) {
+            _uiState.value = current.copy(authError = "Enter your email and password.", passwordResetSent = false)
+            return
+        }
         _uiState.value = current.copy(authBusy = true, authError = null, passwordResetSent = false)
         viewModelScope.launch {
-            when (val outcome = AuthRepository.signIn(email, password)) {
+            when (val outcome = AuthRepository.signIn(trimmedEmail, password)) {
                 is AuthRepository.Outcome.Success ->
                     _uiState.value = _uiState.value.copy(authBusy = false, authError = null)
                 is AuthRepository.Outcome.Failure ->
@@ -876,13 +893,14 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun onResetPassword(email: String) {
         val current = _uiState.value
         if (current.authBusy) return
-        if (email.isBlank()) {
+        val trimmedEmail = email.trim()
+        if (trimmedEmail.isEmpty()) {
             _uiState.value = current.copy(authError = "Enter your email above first.", passwordResetSent = false)
             return
         }
         _uiState.value = current.copy(authBusy = true, authError = null, passwordResetSent = false)
         viewModelScope.launch {
-            when (val outcome = AuthRepository.sendPasswordResetEmail(email)) {
+            when (val outcome = AuthRepository.sendPasswordResetEmail(trimmedEmail)) {
                 is AuthRepository.ResetOutcome.Sent ->
                     _uiState.value = _uiState.value.copy(authBusy = false, passwordResetSent = true)
                 is AuthRepository.ResetOutcome.Failure ->

@@ -1,7 +1,9 @@
 package com.example.game2048
 
 import android.util.Log
+import com.google.firebase.FirebaseNetworkException
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -64,7 +66,7 @@ object AuthRepository {
                 ?: return Outcome.Failure("Sign-up succeeded but no account was returned.")
             Outcome.Success(uid)
         } catch (t: Exception) {
-            Outcome.Failure(t.message ?: "Sign-up failed.")
+            Outcome.Failure(signUpErrorMessage(t))
         }
     }
 
@@ -75,7 +77,7 @@ object AuthRepository {
                 ?: return Outcome.Failure("Sign-in succeeded but no account was returned.")
             Outcome.Success(uid)
         } catch (t: Exception) {
-            Outcome.Failure(t.message ?: "Sign-in failed.")
+            Outcome.Failure(signInErrorMessage(t))
         }
     }
 
@@ -85,8 +87,48 @@ object AuthRepository {
             firebaseAuth.sendPasswordResetEmail(email).await()
             ResetOutcome.Sent
         } catch (t: Exception) {
-            ResetOutcome.Failure(t.message ?: "Couldn't send the reset email.")
+            ResetOutcome.Failure(resetErrorMessage(t))
         }
+    }
+
+    // Firebase's own exception messages are raw and developer-facing (e.g. "The supplied auth
+    // credential is incorrect, malformed or has expired."). Each flow below translates the
+    // error codes that actually matter for it into something a player can act on, falling back
+    // to a short generic message for anything unexpected rather than surfacing SDK internals.
+
+    private fun signInErrorMessage(t: Exception): String = when {
+        t is FirebaseNetworkException -> "No internet connection. Check your network and try again."
+        t is FirebaseAuthException && t.errorCode == "ERROR_TOO_MANY_REQUESTS" ->
+            "Too many attempts. Please wait a moment and try again."
+        t is FirebaseAuthException && t.errorCode == "ERROR_INVALID_EMAIL" ->
+            "That doesn't look like a valid email address."
+        t is FirebaseAuthException && t.errorCode == "ERROR_USER_DISABLED" ->
+            "This account has been disabled."
+        // Modern Firebase deliberately uses one generic code (ERROR_INVALID_CREDENTIAL) for
+        // both "wrong password" and "no such account", so it can't be told which one this is
+        // without confirming to an attacker which emails have accounts -- stays just as vague.
+        t is FirebaseAuthException -> "Incorrect email or password."
+        else -> "Couldn't sign in. Please try again."
+    }
+
+    private fun signUpErrorMessage(t: Exception): String = when {
+        t is FirebaseNetworkException -> "No internet connection. Check your network and try again."
+        t is FirebaseAuthException && t.errorCode == "ERROR_EMAIL_ALREADY_IN_USE" ->
+            "An account already exists for that email -- try signing in instead."
+        t is FirebaseAuthException && t.errorCode == "ERROR_INVALID_EMAIL" ->
+            "That doesn't look like a valid email address."
+        t is FirebaseAuthException && t.errorCode == "ERROR_WEAK_PASSWORD" ->
+            "Password must be at least 6 characters."
+        else -> "Couldn't create an account. Please try again."
+    }
+
+    private fun resetErrorMessage(t: Exception): String = when {
+        t is FirebaseNetworkException -> "No internet connection. Check your network and try again."
+        t is FirebaseAuthException && t.errorCode == "ERROR_INVALID_EMAIL" ->
+            "That doesn't look like a valid email address."
+        t is FirebaseAuthException && t.errorCode == "ERROR_USER_NOT_FOUND" ->
+            "No account found for that email."
+        else -> "Couldn't send the reset email. Please try again."
     }
 
     fun signOut() {
