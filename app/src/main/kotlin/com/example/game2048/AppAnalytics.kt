@@ -81,15 +81,22 @@ object AppAnalytics {
 
     fun logJokerUsed(jokerId: String) = logEvent("joker_used", mapOf("joker_id" to jokerId))
 
-    /** Ties subsequent Crashlytics reports (and future events) to the signed-in account, or
-     *  clears that link on sign-out -- otherwise every crash is anonymous per device, with no
-     *  way to correlate a specific tester's bug report to a report in the dashboard. */
+    /** Ties subsequent Crashlytics reports and Analytics events to the signed-in account, or
+     *  clears that link on sign-out -- otherwise both are anonymous per device/install, with no
+     *  way to correlate a specific tester's bug report to a crash, or to answer cross-device
+     *  questions like "do people who sign in come back more?" [uid] is a Firebase Auth uid, not
+     *  PII (e.g. never the player's email) -- exactly what both SDKs' own docs call for here. */
     fun setUserId(uid: String?) {
         if (!BuildConfig.FIREBASE_ENABLED) return
         try {
             FirebaseCrashlytics.getInstance().setUserId(uid ?: "")
         } catch (_: Throwable) {
             // Crashlytics itself not initialized -- nothing to do.
+        }
+        try {
+            analytics?.setUserId(uid)
+        } catch (_: Throwable) {
+            // Analytics itself not initialized -- nothing to do.
         }
     }
 

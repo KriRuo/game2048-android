@@ -15,9 +15,11 @@ same change that triggers the next `release-build.yml` run, moving `Unreleased` 
 
 ## Unreleased
 
-- Tie Crashlytics crash reports to the signed-in account (`AppAnalytics.setUserId`, called from
-  `GameViewModel`'s existing sign-in/out collector) — crashes were previously anonymous per
-  device with no way to correlate a specific tester's bug report to a dashboard entry.
+- Tie Crashlytics crash reports and Analytics events to the signed-in account
+  (`AppAnalytics.setUserId`, called from `GameViewModel`'s existing sign-in/out collector) —
+  previously both were anonymous per device, with no way to correlate a specific tester's bug
+  report to a crash, or to answer cross-device questions like "do people who sign in come back
+  more?"
 - Log `sign_up`/`sign_in`/`game_over` (with score and level)/`joker_used` (with which Joker)
   analytics events, alongside the existing `game_started`/`level_up`/`streak_milestone`/
   `*_unlocked` events — answers product questions like "do people who sign in come back more?"
