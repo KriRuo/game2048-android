@@ -33,7 +33,13 @@ data class CloudProgress(
     val selectedPaletteId: String = TilePalette.DEFAULT.id,
     val selectedBoardSizeId: String = BoardSizeOption.DEFAULT.id,
     val selectedGameModeId: String = GameMode.DEFAULT.id,
-    val updatedAtEpochMillis: Long = 0L
+    val updatedAtEpochMillis: Long = 0L,
+    /** Which build last wrote this document -- lets a query answer "which version is this
+     *  account on" directly, since Analytics/Crashlytics' own automatic version dimension isn't
+     *  tied to a signed-in account (see BuildConfig.VERSION_NAME/VERSION_CODE). Defaults cover
+     *  a doc read back from before these fields existed. */
+    val appVersionName: String = "",
+    val appVersionCode: Int = 0
 )
 
 /**

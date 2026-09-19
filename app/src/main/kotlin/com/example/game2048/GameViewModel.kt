@@ -743,7 +743,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             selectedPaletteId = selectedPalette.id,
             selectedBoardSizeId = selectedBoardSize.id,
             selectedGameModeId = selectedGameMode.id,
-            updatedAtEpochMillis = System.currentTimeMillis()
+            updatedAtEpochMillis = System.currentTimeMillis(),
+            appVersionName = BuildConfig.VERSION_NAME,
+            appVersionCode = BuildConfig.VERSION_CODE
         )
         viewModelScope.launch { CloudSyncRepository.push(uid, progress) }
     }

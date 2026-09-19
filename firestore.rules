@@ -16,7 +16,7 @@ service cloud.firestore {
           'cumulativeScore', 'bestScore', 'highestTileEver', 'totalMerges',
           'gamesPlayed', 'currentStreak', 'longestStreak', 'streakLastPlayedEpochDay',
           'selectedPaletteId', 'selectedBoardSizeId', 'selectedGameModeId',
-          'updatedAtEpochMillis'
+          'updatedAtEpochMillis', 'appVersionName', 'appVersionCode'
         ];
         return data.keys().hasOnly(requiredKeys) && data.keys().hasAll(requiredKeys)
           && data.cumulativeScore is int && data.cumulativeScore >= 0
@@ -30,7 +30,9 @@ service cloud.firestore {
           && data.selectedPaletteId in ['clay', 'meadow', 'midnight', 'berry', 'cyber']
           && data.selectedBoardSizeId in ['classic', 'big', 'mega', 'giant']
           && data.selectedGameModeId in ['original', 'extended']
-          && data.updatedAtEpochMillis is int && data.updatedAtEpochMillis >= 0;
+          && data.updatedAtEpochMillis is int && data.updatedAtEpochMillis >= 0
+          && data.appVersionName is string
+          && data.appVersionCode is int && data.appVersionCode >= 0;
       }
 
       // Lifetime stats only ever go up -- see GameViewModel.applyCloudProgressIfSignedIn's
