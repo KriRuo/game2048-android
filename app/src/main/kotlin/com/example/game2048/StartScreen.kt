@@ -213,7 +213,7 @@ internal fun StartScreen(
                 GameMode.entries.forEach { mode ->
                     StartModeCard(
                         mode = mode,
-                        selected = mode == uiState.gameMode,
+                        selected = mode == uiState.selectedGameMode,
                         onClick = { onSelectGameMode(mode) }
                     )
                 }

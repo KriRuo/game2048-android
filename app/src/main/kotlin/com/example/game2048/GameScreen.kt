@@ -59,9 +59,15 @@ fun Game2048App(viewModel: GameViewModel = viewModel()) {
             onDismissAuthError = viewModel::onDismissAuthError,
             onPlay = {
                 // A game-over board can't be "resumed" -- start fresh in whichever mode was
-                // just picked. An in-progress (or brand new, unplayed) board is left alone so
-                // Play always means "go look at the board that's already there."
-                if (uiState.game.isGameOver) viewModel.onNewGame()
+                // just picked. Same if the picked mode doesn't match the mode the in-progress
+                // board actually started under (e.g. played a bit under Original, went Home,
+                // picked Extended): resuming that exact board would retroactively hand it Jokers
+                // it was never started with, so it starts fresh instead -- see
+                // GameUiState.selectedGameMode. Neither check fires if the board is untouched
+                // and already matches, so Play still just resumes as-is in the common case.
+                if (uiState.game.isGameOver || uiState.selectedGameMode != uiState.gameMode) {
+                    viewModel.onNewGame()
+                }
                 screen = AppScreen.GAME
             }
         )

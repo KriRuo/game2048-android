@@ -34,6 +34,10 @@ private const val KEY_CUMULATIVE_SCORE = "cumulative_score"
 private const val KEY_SELECTED_PALETTE = "selected_palette"
 private const val KEY_SELECTED_BOARD_SIZE = "selected_board_size"
 private const val KEY_SELECTED_GAME_MODE = "selected_game_mode"
+/** The ruleset the *currently saved board* was actually started under -- separate from
+ *  [KEY_SELECTED_GAME_MODE] (the Start Screen preference for the *next* board). Written once
+ *  per New Game, never touched by [GameViewModel.onSelectGameMode] or a cloud-progress sync. */
+private const val KEY_ACTIVE_GAME_MODE = "active_game_mode"
 private const val KEY_GAMES_PLAYED = "games_played"
 private const val KEY_HIGHEST_TILE_EVER = "highest_tile_ever"
 private const val KEY_TOTAL_MERGES = "total_merges"
@@ -110,9 +114,17 @@ data class GameUiState(
     val undoState: GameState? = null,
     /** Single-move undos left this game; resets to [MAX_UNDOS] on New Game. */
     val undosRemaining: Int = MAX_UNDOS,
-    /** Which ruleset is active -- see [GameMode]. ORIGINAL hides Undo and all Jokers from the
-     *  UI; switching doesn't touch the board in progress. */
+    /** Which ruleset [game] itself was started under -- see [GameMode]. ORIGINAL hides Undo and
+     *  all Jokers from the UI. Locked in at New Game time and never changed on an in-progress
+     *  board -- otherwise a board started under ORIGINAL could gain Jokers/Undo mid-game just
+     *  from picking EXTENDED on the Start Screen, which is exactly the bug [selectedGameMode]
+     *  exists to prevent. */
     val gameMode: GameMode = GameMode.DEFAULT,
+    /** The Start Screen's ruleset picker selection -- takes effect on the *next* New Game only,
+     *  same pattern as [selectedBoardSize]/[selectedPalette]. [Game2048App]'s onPlay compares
+     *  this against [gameMode] and starts a fresh board whenever they differ, so switching modes
+     *  can never retroactively grant (or take away) Jokers/Undo on a board already in progress. */
+    val selectedGameMode: GameMode = GameMode.DEFAULT,
     /** The Joker currently being aimed (player tapped its button, hasn't tapped a target yet
      *  or is midway through Swap's two-tile pick), or null when none is active. Rotate never
      *  appears here -- it has no target, see [GameViewModel.onRotate]. */
@@ -282,6 +294,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         val boardSize = if (BoardSizeUnlocks.isUnlocked(selectedBoardSize, level)) selectedBoardSize.size else BoardSizeOption.DEFAULT.size
         AppAnalytics.logGameStarted()
         gamesPlayed += 1
+        // Locks this fresh board to whatever mode is currently selected -- see KEY_ACTIVE_GAME_MODE.
+        prefs.edit().putString(KEY_ACTIVE_GAME_MODE, selectedGameMode.id).commit()
         val fresh = freshGame(best = bestScore, boardSize = boardSize).copy(
             level = level,
             levelProgress = current.levelProgress,
@@ -290,6 +304,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             selectedPalette = selectedPalette,
             selectedBoardSize = selectedBoardSize,
             gameMode = selectedGameMode,
+            selectedGameMode = selectedGameMode,
             gamesPlayed = gamesPlayed,
             highestTileEver = highestTileEver,
             totalMerges = totalMerges,
@@ -326,15 +341,16 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = current.copy(selectedBoardSize = option)
     }
 
-    /** Switches ruleset (see [GameMode]). Doesn't reset the board, score, or either allowance
-     *  in progress -- it only changes which actions the UI exposes going forward, so it's safe
-     *  to flip mid-game without losing anything. */
+    /** Only updates the stored preference for the *next* New Game -- same pattern as
+     *  [onSelectBoardSize]. Never touches the board currently in play: [GameUiState.gameMode]
+     *  (what actually gates Undo/Jokers) only changes at New Game time, in [onNewGame]. See
+     *  [GameUiState.selectedGameMode]. */
     fun onSelectGameMode(mode: GameMode) {
         if (mode == selectedGameMode) return
         selectedGameMode = mode
         prefs.edit().putString(KEY_SELECTED_GAME_MODE, mode.id).commit()
         syncToCloudIfSignedIn()
-        _uiState.value = _uiState.value.copy(gameMode = mode, activeJoker = null, jokerFirstTileId = null)
+        _uiState.value = _uiState.value.copy(selectedGameMode = mode)
     }
 
     /** Activates the Teleport Joker: the next tile tap picks (or re-picks) the tile to move,
@@ -600,10 +616,19 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         // freshGame() below is starting game #1 -- count it the same as onNewGame() would.
         if (savedGame == null) {
             gamesPlayed += 1
-            prefs.edit().putInt(KEY_GAMES_PLAYED, gamesPlayed).commit()
+            prefs.edit()
+                .putInt(KEY_GAMES_PLAYED, gamesPlayed)
+                .putString(KEY_ACTIVE_GAME_MODE, selectedGameMode.id)
+                .commit()
             AppAnalytics.logGameStarted()
         }
         val base = savedGame ?: freshGame()
+        // A saved board from before KEY_ACTIVE_GAME_MODE existed has no recorded mode of its
+        // own -- falling back to the current preference matches this app's behavior before this
+        // field existed, rather than guessing. Every board from here on always has one, written
+        // above (fresh board) or by onNewGame (an existing board that already had one).
+        val activeGameMode = prefs.getString(KEY_ACTIVE_GAME_MODE, null)?.let { GameMode.fromId(it) }
+            ?: selectedGameMode
         val previousStreak = loadStreak()
         val updatedStreak = StreakTracker.onAppOpened(previousStreak, todayEpochDay())
         val milestone = StreakTracker.newlyReachedMilestone(previousStreak, updatedStreak)
@@ -628,7 +653,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             levelAtGameStart = level,
             selectedPalette = selectedPalette,
             selectedBoardSize = selectedBoardSize,
-            gameMode = selectedGameMode,
+            gameMode = activeGameMode,
+            selectedGameMode = selectedGameMode,
             gamesPlayed = gamesPlayed,
             highestTileEver = highestTileEver,
             totalMerges = totalMerges,
@@ -828,7 +854,11 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             gamesPlayed = gamesPlayed,
             selectedPalette = selectedPalette,
             selectedBoardSize = selectedBoardSize,
-            gameMode = selectedGameMode,
+            // Only the *preference* -- never gameMode itself, which is locked to whatever board
+            // is currently in progress. A sign-in adopting a different device's mode preference
+            // must not retroactively grant/hide Jokers on this device's in-progress board any
+            // more than picking a mode on the Start Screen does; see onSelectGameMode.
+            selectedGameMode = selectedGameMode,
             currentStreak = streak.current,
             longestStreak = streak.longest,
             game = current.game.copy(best = bestScore)
