@@ -44,11 +44,11 @@ Screen's ❓ icon.
 
 ### Undo & Jokers (Extended mode)
 - **Undo** — revert the single most recent move, 3 uses per game.
-- **Teleport** (2/game) — tap a tile, then tap an empty cell to move it there.
-- **Swap** (2/game) — tap two tiles to exchange their positions.
-- **Bomb** (2/game) — tap a tile to remove it outright.
-- **Double** (2/game) — tap a tile to double its value in place (scored like a merge).
-- **Rotate** (2/game) — rotate the whole board 90° clockwise instantly, no target needed.
+- **Teleport** (1/game) — tap a tile, then tap an empty cell to move it there.
+- **Swap** (1/game) — tap two tiles to exchange their positions.
+- **Bomb** (1/game) — tap a tile to remove it outright.
+- **Double** (1/game) — tap a tile to double its value in place (scored like a merge).
+- **Rotate** (1/game) — rotate the whole board 90° clockwise instantly, no target needed.
 
 ### Progression
 - **Player Level** — derived from cumulative score across every game ever played (a
@@ -71,6 +71,19 @@ Screen's ❓ icon.
   to a 10-day cap) shown right on the Start Screen so showing up daily visibly speeds up leveling.
 - Lifetime stats shown via the Start Screen's Stats icon: games played, highest tile ever
   reached, and total merges.
+- **Daily Challenge** — a card on the Start Screen opens one fixed-seed, 30-move-capped board
+  shared by every player on a given calendar day, one attempt per day, no Undo/Jokers regardless
+  of your own mode. Completing it (win, loss, or running out the move cap) earns a flat +50 XP
+  bonus. Entirely separate from the daily streak above — its own local score/best history, no
+  leaderboard.
+
+### Optional cloud sync (sign in)
+Tap the 🔒/☁️ icon on the Start Screen to create an account (email/password) and sync lifetime
+progress (score, streaks, unlocks, preferences) across devices — entirely optional, the game is
+always fully playable signed out. Includes password reset. Whichever device (or the cloud) has
+more lifetime progress wins on sign-in; the other side is brought up to match. Backed by
+Firebase Auth + Cloud Firestore; see `CLAUDE.md`'s "Firebase backend" section for the schema and
+security rules if you're standing up your own Firebase project for this repo.
 
 ### Layout & polish
 - Responsive portrait layout that fits on real device screens without scrolling, plus a
@@ -85,9 +98,9 @@ Screen's ❓ icon.
   animate individual tiles rather than snapping a raw value grid into place. Progression logic
   (`LevelTracker`, `StreakTracker`, `ThemeUnlocks`, `BoardSizeOption`) is similarly pure and
   independently unit tested.
-- 78 JUnit tests across 6 files under `app/src/test/kotlin/.../logic/` cover the engine
-  (including Jokers and board-size variants), level curve, streak transitions, theme/board-size
-  unlock rules, and save-state (de)serialization.
+- 83 JUnit tests across 7 files under `app/src/test/kotlin/.../logic/` cover the engine
+  (including Jokers and board-size variants), level curve, streak transitions, daily-challenge
+  seeding/completion, theme/board-size unlock rules, and save-state (de)serialization.
 - Play Store upload-ready: real `applicationId` (`com.kriruo.game2048`), an optional release
   signing config read from a gitignored `keystore.properties`, and R8 minification/resource
   shrinking enabled for release builds.
@@ -100,27 +113,35 @@ The Compose UI is split by concern rather than living in one file:
 app/
   src/main/kotlin/com/example/game2048/
     MainActivity.kt                - Activity entry point
-    GameScreen.kt                   - App nav (Start vs. Game screen) + the in-game screen layout
-    StartScreen.kt                   - Landing screen: mode picker, customize icons, orbit flourish
-    GameChrome.kt                     - In-game Header (portrait) / Sidebar (landscape) + ScoreChip
-    GameBoardUi.kt                     - The board itself: tile grid, animated tiles, swipe gestures
-    JokerUi.kt                          - Joker aiming banner + bottom action bar
-    GameOverlays.kt                      - Combo popup, streak milestone banner, win/game-over overlay
-    ThemePickerDialog.kt                  - Palette picker (opened from StartScreen's Theme icon)
-    BoardSizePickerDialog.kt               - Board size picker (opened from StartScreen's size icon)
-    StatsDialog.kt                           - Lifetime stats (opened from StartScreen's Stats icon)
-    WelcomeDialog.kt                           - First-run "How to Play" walkthrough (opened from StartScreen's ? icon)
-    DailyRewardDialog.kt                        - Claimable "Day N streak!" bonus-XP reward (opened from StartScreen)
-    ConfirmNewGameDialog.kt                      - "Start New Game?" confirmation (opened from the in-game New Game button)
-    GameViewModel.kt                          - Holds GameUiState, forwards swipes/Jokers to the engine, persists all state
-    logic/GameLogic.kt                         - Pure game engine (tiles with stable ids, moves, merging, Jokers, win/lose)
-    logic/BoardSizeOption.kt                    - Board size tiers (Classic/Big/Mega/Giant) and their unlock levels
-    logic/LevelTracker.kt                        - Cumulative-score → player Level curve
-    logic/StreakTracker.kt                        - Daily streak state machine + milestone detection
-    logic/ThemeUnlocks.kt                          - Tile color palette definitions and unlock levels
-    logic/GameStateSerializer.kt                    - Encodes/decodes GameState for SharedPreferences persistence
-    ui/theme/                                        - Compose Material3 theme: per-palette colors & typography
-  src/test/kotlin/.../logic/                         - 78 JUnit tests across 6 files (engine, level, streak, unlocks, serialization)
+    Game2048Application.kt          - Application class; installs a crash-capture fallback dialog
+    GameScreen.kt                    - App nav (Start vs. Game vs. Daily Challenge) + in-game layout
+    StartScreen.kt                    - Landing screen: mode picker, customize/account icons, orbit flourish
+    GameChrome.kt                      - In-game Header (portrait) / Sidebar (landscape) + ScoreChip
+    GameBoardUi.kt                       - The board itself: tile grid, animated tiles, swipe gestures
+    JokerUi.kt                            - Joker aiming banner + bottom action bar
+    GameOverlays.kt                        - Combo popup, streak milestone banner, win/game-over overlay
+    DailyChallengeScreen.kt                 - Daily Challenge's own small screen (start/play/result)
+    ThemePickerDialog.kt                      - Palette picker (opened from StartScreen's Theme icon)
+    BoardSizePickerDialog.kt                   - Board size picker (opened from StartScreen's size icon)
+    StatsDialog.kt                               - Lifetime stats (opened from StartScreen's Stats icon)
+    WelcomeDialog.kt                               - First-run "How to Play" walkthrough (opened from StartScreen's ? icon)
+    DailyRewardDialog.kt                            - Claimable "Day N streak!" bonus-XP reward (opened from StartScreen)
+    AccountDialog.kt                                 - Sign up/in/out + password reset (opened from StartScreen's ☁️/🔒 icon)
+    ConfirmNewGameDialog.kt                           - "Start New Game?" confirmation (opened from the in-game New Game button)
+    AppAnalytics.kt                                    - Firebase Analytics/Crashlytics wrapper (no-ops without config)
+    AuthRepository.kt                                   - Firebase Auth (Email/Password) wrapper (no-ops without config)
+    CloudSyncRepository.kt                               - Firestore cloud-sync wrapper (no-ops without config)
+    GameViewModel.kt                                      - Holds GameUiState, forwards swipes/Jokers to the engine, persists all state
+    logic/GameLogic.kt                                     - Pure game engine (tiles with stable ids, moves, merging, Jokers, win/lose)
+    logic/BoardSizeOption.kt                                - Board size tiers (Classic/Big/Mega/Giant) and their unlock levels
+    logic/LevelTracker.kt                                    - Cumulative-score → player Level curve
+    logic/StreakTracker.kt                                    - Daily streak state machine + milestone detection
+    logic/DailyChallengeTracker.kt                             - Daily Challenge completion state + per-day seed derivation
+    logic/ThemeUnlocks.kt                                       - Tile color palette definitions and unlock levels
+    logic/GameStateSerializer.kt                                 - Encodes/decodes GameState for SharedPreferences persistence
+    ui/theme/                                                     - Compose Material3 theme: per-palette colors & typography
+  src/test/kotlin/.../logic/                                      - 83 JUnit tests across 7 files (engine, level, streak, daily
+                                                                     challenge, unlocks, serialization)
 ```
 
 ## Opening the project
@@ -145,13 +166,15 @@ terminal once the project has synced at least once:
 ## Build & verification status
 
 This app builds and has been installed and played on a real device across many rounds of
-changes — it isn't just unit-tested in isolation. In day-to-day development it's typically
-built in an environment with the Android SDK/Gradle available (not necessarily this checkout's
-machine) and the resulting APK is installed and tested by hand on-device; there's no CI wired
-up yet to build every commit automatically. If you're setting this up fresh in Android Studio
-for the first time, the initial Gradle sync still needs an internet connection to fetch the
-Android Gradle Plugin, Kotlin, and AndroidX/Compose dependencies, but no source changes should
-be needed to get it running.
+changes — it isn't just unit-tested in isolation. GitHub Actions CI (`.github/workflows/ci.yml`)
+runs the full JUnit suite plus a debug-build sanity check on every push to `master` and every
+pull request; a separate workflow (`build-test-apk.yml`) publishes a rolling debug-APK GitHub
+Release on every push to `master` so testers can install the latest build without a local
+Android toolchain. See `CLAUDE.md`'s "CI/CD" section for details, and `CHANGELOG.md` for a
+dated history of what's shipped. If you're setting this up fresh in Android Studio for the
+first time, the initial Gradle sync still needs an internet connection to fetch the Android
+Gradle Plugin, Kotlin, and AndroidX/Compose dependencies, but no source changes should be needed
+to get it running.
 
 The core game algorithm was additionally cross-checked early on against an independent Python
 re-implementation — known board/merge cases plus 500 randomized-game invariant simulations —
