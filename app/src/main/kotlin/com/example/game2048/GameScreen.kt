@@ -21,7 +21,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 
-private enum class AppScreen { START, GAME }
+private enum class AppScreen { START, GAME, DAILY_CHALLENGE }
 
 /** True entry point: owns which of [AppScreen]'s two screens is showing. Always launches on
  *  [AppScreen.START] -- Start is meant to be the app's actual front door every time it opens,
@@ -57,6 +57,7 @@ fun Game2048App(viewModel: GameViewModel = viewModel()) {
             onSignOut = viewModel::onSignOut,
             onResetPassword = viewModel::onResetPassword,
             onDismissAuthError = viewModel::onDismissAuthError,
+            onOpenDailyChallenge = { screen = AppScreen.DAILY_CHALLENGE },
             onPlay = {
                 // A game-over board can't be "resumed" -- start fresh in whichever mode was
                 // just picked. Same if the picked mode doesn't match the mode the in-progress
@@ -72,6 +73,11 @@ fun Game2048App(viewModel: GameViewModel = viewModel()) {
             }
         )
         AppScreen.GAME -> GameScreen(viewModel = viewModel, onNavigateHome = { screen = AppScreen.START })
+        AppScreen.DAILY_CHALLENGE -> DailyChallengeScreen(
+            uiState = uiState,
+            viewModel = viewModel,
+            onNavigateHome = { screen = AppScreen.START }
+        )
     }
 }
 

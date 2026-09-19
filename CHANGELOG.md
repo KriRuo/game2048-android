@@ -18,6 +18,11 @@ same change that triggers the next `release-build.yml` run, moving `Unreleased` 
 
 ## Unreleased
 
+- Add a Daily Challenge: a fixed-seed, move-capped (30 moves) board that's identical for every
+  player on a given calendar day, one attempt per day, no Undo/Jokers regardless of the player's
+  own mode, +50 XP for completing it. Reachable from a new card on the Start Screen
+  (`DailyChallengeTracker`, `DailyChallengeScreen`, `GameViewModel.onStartDailyChallenge`/
+  `onDailyChallengeSwipe`). Local-only for now — score/best aren't synced to Firestore yet.
 - Tie Crashlytics crash reports and Analytics events to the signed-in account
   (`AppAnalytics.setUserId`, called from `GameViewModel`'s existing sign-in/out collector) —
   previously both were anonymous per device, with no way to correlate a specific tester's bug

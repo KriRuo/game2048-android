@@ -222,8 +222,11 @@ internal fun BoardArea(
     }
 }
 
+/** Not private: reused as-is by [DailyChallengeScreen], which needs the same tile-grid
+ *  rendering/animation but none of [BoardArea]'s Joker bar, game-over overlay, or persisted-game
+ *  wiring. */
 @Composable
-private fun Board(
+internal fun Board(
     boardSize: Int,
     tiles: List<Tile>,
     previousTilesById: Map<Int, Tile>,

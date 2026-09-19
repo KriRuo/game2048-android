@@ -5,6 +5,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.game2048.logic.BoardSizeOption
 import com.example.game2048.logic.BoardSizeUnlocks
+import com.example.game2048.logic.DailyChallengeState
+import com.example.game2048.logic.DailyChallengeTracker
 import com.example.game2048.logic.Direction
 import com.example.game2048.logic.GameMode
 import com.example.game2048.logic.GameState
@@ -23,6 +25,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.TimeZone
+import kotlin.random.Random
 
 private const val PREFS_NAME = "game2048_prefs"
 private const val KEY_BEST_SCORE = "best_score"
@@ -47,6 +50,9 @@ private const val KEY_HAS_SEEN_WELCOME = "has_seen_welcome"
  *  apart from "leftover progress from whoever was signed in here before" (which a brand-new
  *  second account must NOT silently inherit). */
 private const val KEY_LAST_SYNCED_UID = "last_synced_uid"
+private const val KEY_DAILY_CHALLENGE_LAST_COMPLETED_DAY = "daily_challenge_last_completed_day"
+private const val KEY_DAILY_CHALLENGE_LAST_SCORE = "daily_challenge_last_score"
+private const val KEY_DAILY_CHALLENGE_BEST_SCORE = "daily_challenge_best_score"
 
 /** Single-move undos allowed per game (see [GameViewModel.onUndo]). Intentionally *not*
  *  persisted across a process restart, along with the one-move [GameUiState.undoState] snapshot
@@ -173,7 +179,27 @@ data class GameUiState(
     /** True right after [GameViewModel.onResetPassword] succeeds, so [AccountDialog] can show
      *  a "check your inbox" confirmation -- cleared by [GameViewModel.onDismissAuthError] or
      *  the next sign-in/sign-up/reset attempt. */
-    val passwordResetSent: Boolean = false
+    val passwordResetSent: Boolean = false,
+    /** Today's daily-challenge board while an attempt is active, null otherwise -- kept entirely
+     *  separate from [game] (the regular, persisted, resumable board): the daily challenge is a
+     *  short, unsaved, single-attempt session with its own seeded engine, not a variant of
+     *  ordinary play. See [GameViewModel.onStartDailyChallenge]/[DailyChallengeScreen]. */
+    val dailyChallengeGame: GameState? = null,
+    val dailyChallengeLastMovements: List<TileMovement> = emptyList(),
+    val dailyChallengeLastMergedTileIds: Set<Int> = emptySet(),
+    val dailyChallengeLastSpawnedTileIds: Set<Int> = emptySet(),
+    val dailyChallengePreviousTilesById: Map<Int, Tile> = emptyMap(),
+    val dailyChallengeMoveToken: Long = 0L,
+    val dailyChallengeInvalidMoveToken: Long = 0L,
+    /** Moves left in the current attempt; the run ends -- win, loss, or simply zero moves left
+     *  -- at [DailyChallengeTracker.MOVE_CAP]. Meaningless while [dailyChallengeGame] is null. */
+    val dailyChallengeMovesRemaining: Int = 0,
+    /** True once today's local-calendar-day challenge has already been played -- see
+     *  [DailyChallengeTracker.isCompletedToday]. [DailyChallengeScreen] shows
+     *  [dailyChallengeLastScore] instead of a Start button once this is true. */
+    val dailyChallengeCompletedToday: Boolean = false,
+    val dailyChallengeLastScore: Int = 0,
+    val dailyChallengeBestScore: Int = 0
 )
 
 /**
@@ -184,6 +210,13 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     private val engine = Game2048Engine()
     private val prefs = application.getSharedPreferences(PREFS_NAME, Application.MODE_PRIVATE)
+
+    /** The seeded engine for the current daily-challenge attempt, or null when none is active --
+     *  see [onStartDailyChallenge]. Must be the *same* instance across every swipe of one
+     *  attempt (not recreated per move): [Game2048Engine]'s injected [kotlin.random.Random] is
+     *  stateful, so recreating it from the same seed every swipe would replay the same first
+     *  spawn forever instead of progressing through the day's sequence. */
+    private var dailyChallengeEngine: Game2048Engine? = null
 
     init {
         // Both no-op entirely unless google-services.json was present at build time -- see
@@ -202,6 +235,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private var gamesPlayed: Int = prefs.getInt(KEY_GAMES_PLAYED, 0)
     private var highestTileEver: Int = prefs.getInt(KEY_HIGHEST_TILE_EVER, 0)
     private var totalMerges: Long = prefs.getLong(KEY_TOTAL_MERGES, 0L)
+    private var dailyChallengeState: DailyChallengeState = loadDailyChallengeState()
 
     private val _uiState = MutableStateFlow(buildInitialState())
     val uiState: StateFlow<GameUiState> = _uiState.asStateFlow()
@@ -631,6 +665,100 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = _uiState.value.copy(justReachedMilestone = null)
     }
 
+    /** Starts today's daily-challenge attempt -- no-ops if it's already been played today (see
+     *  [DailyChallengeTracker.isCompletedToday]). Always a Classic 4x4 board regardless of the
+     *  player's own board-size preference, so every attempt on a given day's seed is directly
+     *  comparable. See [DailyChallengeScreen]. */
+    fun onStartDailyChallenge() {
+        val current = _uiState.value
+        val today = todayEpochDay()
+        if (DailyChallengeTracker.isCompletedToday(dailyChallengeState, today)) return
+        val challengeEngine = Game2048Engine(random = Random(DailyChallengeTracker.seedFor(today)))
+        dailyChallengeEngine = challengeEngine
+        val fresh = challengeEngine.newGame()
+        _uiState.value = current.copy(
+            dailyChallengeGame = fresh,
+            dailyChallengeLastMovements = emptyList(),
+            dailyChallengeLastMergedTileIds = emptySet(),
+            dailyChallengeLastSpawnedTileIds = fresh.tiles.map { it.id }.toSet(),
+            dailyChallengePreviousTilesById = emptyMap(),
+            dailyChallengeMoveToken = 0L,
+            dailyChallengeMovesRemaining = DailyChallengeTracker.MOVE_CAP
+        )
+    }
+
+    /** Swipe handling for an active daily-challenge attempt -- entirely separate from [onSwipe]:
+     *  uses the seeded [dailyChallengeEngine] instead of the regular [engine], never touches
+     *  cumulativeScore/bestScore/lifetime stats per move (only the flat completion bonus in
+     *  [finishDailyChallenge] does, once), and ends the attempt itself once the move cap or a
+     *  real game-over is reached -- no Undo, no Jokers, nothing else can end it early. */
+    fun onDailyChallengeSwipe(direction: Direction) {
+        val current = _uiState.value
+        val challengeEngine = dailyChallengeEngine ?: return
+        val board = current.dailyChallengeGame ?: return
+        val result = challengeEngine.move(board, direction)
+        if (!result.moved) {
+            _uiState.value = current.copy(dailyChallengeInvalidMoveToken = current.dailyChallengeInvalidMoveToken + 1)
+            return
+        }
+        val movesLeft = current.dailyChallengeMovesRemaining - 1
+        _uiState.value = current.copy(
+            dailyChallengeGame = result.state,
+            dailyChallengeLastMovements = result.movements,
+            dailyChallengeLastMergedTileIds = result.mergedTileIds,
+            dailyChallengeLastSpawnedTileIds = setOfNotNull(result.spawnedTileId),
+            dailyChallengePreviousTilesById = board.tiles.associateBy { it.id },
+            dailyChallengeMoveToken = current.dailyChallengeMoveToken + 1,
+            dailyChallengeMovesRemaining = movesLeft
+        )
+        if (result.state.isGameOver || movesLeft <= 0) {
+            finishDailyChallenge(result.state.score)
+        }
+    }
+
+    /** Ends the current attempt: records it (win, loss, or ran out of moves -- treated the same,
+     *  one attempt is one attempt), grants the flat completion bonus XP, and releases the seeded
+     *  engine. Best-effort synced to Firestore like any other cumulativeScore change, but the
+     *  daily-challenge score/best themselves stay local-only for now -- see CLAUDE.md. */
+    private fun finishDailyChallenge(score: Int) {
+        val today = todayEpochDay()
+        dailyChallengeState = DailyChallengeTracker.recordCompletion(dailyChallengeState, today, score)
+        saveDailyChallengeState(dailyChallengeState)
+        dailyChallengeEngine = null
+
+        cumulativeScore += DailyChallengeTracker.COMPLETION_BONUS_XP
+        prefs.edit().putLong(KEY_CUMULATIVE_SCORE, cumulativeScore).commit()
+        val level = LevelTracker.levelForCumulativeScore(cumulativeScore)
+        val current = _uiState.value
+        _uiState.value = current.copy(
+            level = level,
+            levelProgress = LevelTracker.progressToNextLevel(cumulativeScore),
+            cumulativeScore = cumulativeScore,
+            dailyChallengeGame = null,
+            dailyChallengeCompletedToday = true,
+            dailyChallengeLastScore = dailyChallengeState.lastScore,
+            dailyChallengeBestScore = dailyChallengeState.bestScore
+        )
+        syncToCloudIfSignedIn()
+    }
+
+    private fun loadDailyChallengeState(): DailyChallengeState {
+        val lastDay = prefs.getLong(KEY_DAILY_CHALLENGE_LAST_COMPLETED_DAY, DailyChallengeState.NONE_DAY)
+        return DailyChallengeState(
+            lastCompletedEpochDay = lastDay,
+            lastScore = prefs.getInt(KEY_DAILY_CHALLENGE_LAST_SCORE, 0),
+            bestScore = prefs.getInt(KEY_DAILY_CHALLENGE_BEST_SCORE, 0)
+        )
+    }
+
+    private fun saveDailyChallengeState(state: DailyChallengeState) {
+        prefs.edit()
+            .putLong(KEY_DAILY_CHALLENGE_LAST_COMPLETED_DAY, state.lastCompletedEpochDay)
+            .putInt(KEY_DAILY_CHALLENGE_LAST_SCORE, state.lastScore)
+            .putInt(KEY_DAILY_CHALLENGE_BEST_SCORE, state.bestScore)
+            .commit()
+    }
+
     private fun buildInitialState(): GameUiState {
         val savedGame = loadSavedGame()
         // No saved board (fresh install, or a previous game ended with an empty board) means
@@ -650,8 +778,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         // above (fresh board) or by onNewGame (an existing board that already had one).
         val activeGameMode = prefs.getString(KEY_ACTIVE_GAME_MODE, null)?.let { GameMode.fromId(it) }
             ?: selectedGameMode
+        val today = todayEpochDay()
         val previousStreak = loadStreak()
-        val updatedStreak = StreakTracker.onAppOpened(previousStreak, todayEpochDay())
+        val updatedStreak = StreakTracker.onAppOpened(previousStreak, today)
         val milestone = StreakTracker.newlyReachedMilestone(previousStreak, updatedStreak)
         if (milestone != null) AppAnalytics.logStreakMilestone(milestone)
         saveStreak(updatedStreak)
@@ -680,7 +809,10 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             highestTileEver = highestTileEver,
             totalMerges = totalMerges,
             hasSeenWelcome = prefs.getBoolean(KEY_HAS_SEEN_WELCOME, false),
-            pendingDailyReward = pendingReward
+            pendingDailyReward = pendingReward,
+            dailyChallengeCompletedToday = DailyChallengeTracker.isCompletedToday(dailyChallengeState, today),
+            dailyChallengeLastScore = dailyChallengeState.lastScore,
+            dailyChallengeBestScore = dailyChallengeState.bestScore
         )
     }
 

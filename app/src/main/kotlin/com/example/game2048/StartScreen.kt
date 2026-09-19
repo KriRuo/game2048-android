@@ -49,6 +49,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.game2048.logic.BoardSizeOption
+import com.example.game2048.logic.DailyChallengeTracker
 import com.example.game2048.logic.GameMode
 import com.example.game2048.logic.LevelTracker
 import com.example.game2048.logic.TilePalette
@@ -75,7 +76,8 @@ internal fun StartScreen(
     onSignIn: (email: String, password: String) -> Unit,
     onSignOut: () -> Unit,
     onResetPassword: (email: String) -> Unit,
-    onDismissAuthError: () -> Unit
+    onDismissAuthError: () -> Unit,
+    onOpenDailyChallenge: () -> Unit
 ) {
     val accent = LocalPaletteColors.current.accent
     var showThemePicker by remember { mutableStateOf(false) }
@@ -197,6 +199,13 @@ internal fun StartScreen(
                     onClick = { showAccount = true }
                 )
             }
+            DailyChallengeCard(
+                completedToday = uiState.dailyChallengeCompletedToday,
+                lastScore = uiState.dailyChallengeLastScore,
+                bestScore = uiState.dailyChallengeBestScore,
+                onClick = onOpenDailyChallenge,
+                modifier = Modifier.padding(top = 14.dp)
+            )
             Text(
                 text = "CHOOSE HOW YOU WANT TO PLAY",
                 style = MaterialTheme.typography.titleSmall,
@@ -314,6 +323,49 @@ private fun StartScreenIconButton(label: String, contentDescription: String, onC
         modifier = Modifier.semantics { this.contentDescription = contentDescription }
     ) {
         Text(label, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+    }
+}
+
+/** Entry point to [DailyChallengeScreen] -- its own wide card rather than a 7th tiny icon
+ *  crammed into the row above, since this is a headline feature worth real visual weight, not
+ *  a settings shortcut. Doubles as a status display: shows today's score once played instead of
+ *  just a static label, so there's a reason to glance at it even after finishing. */
+@Composable
+private fun DailyChallengeCard(
+    completedToday: Boolean,
+    lastScore: Int,
+    bestScore: Int,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val palette = LocalPaletteColors.current
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(palette.surfaceChip)
+            .clickable(onClick = onClick)
+            .padding(16.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f, fill = false)) {
+            Text(
+                text = if (completedToday) "✅ Daily Challenge" else "🗓️ Daily Challenge",
+                fontWeight = FontWeight.Bold,
+                color = palette.accent
+            )
+            Text(
+                text = if (completedToday) {
+                    "Today's score: $lastScore · Best: $bestScore"
+                } else {
+                    "Same board for everyone today — ${DailyChallengeTracker.MOVE_CAP} moves, one shot."
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+            )
+        }
+        Text("›", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = palette.accent)
     }
 }
 
