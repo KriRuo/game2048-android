@@ -1,0 +1,60 @@
+rules_version = '2';
+
+// See CLAUDE.md and app/src/main/kotlin/com/example/game2048/CloudSyncRepository.kt for the
+// data model this enforces: one users/{uid} document per signed-in player, written as a full
+// (non-merge) overwrite from the Android client. There is exactly one collection.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid} {
+      // The document ID *is* the identity check -- no separate ownerId field to compare.
+      function isOwner() {
+        return request.auth != null && request.auth.uid == uid;
+      }
+
+      function isValidProgress(data) {
+        let requiredKeys = [
+          'cumulativeScore', 'bestScore', 'highestTileEver', 'totalMerges',
+          'gamesPlayed', 'currentStreak', 'longestStreak', 'streakLastPlayedEpochDay',
+          'selectedPaletteId', 'selectedBoardSizeId', 'selectedGameModeId',
+          'updatedAtEpochMillis'
+        ];
+        return data.keys().hasOnly(requiredKeys) && data.keys().hasAll(requiredKeys)
+          && data.cumulativeScore is int && data.cumulativeScore >= 0
+          && data.bestScore is int && data.bestScore >= 0
+          && data.highestTileEver is int && data.highestTileEver >= 0
+          && data.totalMerges is int && data.totalMerges >= 0
+          && data.gamesPlayed is int && data.gamesPlayed >= 0
+          && data.currentStreak is int && data.currentStreak >= 0
+          && data.longestStreak is int && data.longestStreak >= 0
+          && data.streakLastPlayedEpochDay is int && data.streakLastPlayedEpochDay >= 0
+          && data.selectedPaletteId in ['clay', 'meadow', 'midnight', 'berry', 'cyber']
+          && data.selectedBoardSizeId in ['classic', 'big', 'mega', 'giant']
+          && data.selectedGameModeId in ['original', 'extended']
+          && data.updatedAtEpochMillis is int && data.updatedAtEpochMillis >= 0;
+      }
+
+      // Lifetime stats only ever go up -- see GameViewModel.applyCloudProgressIfSignedIn's
+      // "adopt the larger of the two" merge policy, which this backs up server-side so a buggy
+      // or tampered client can't claw a player's real progress back down via a direct write.
+      function isMonotonic(existing, incoming) {
+        return incoming.cumulativeScore >= existing.cumulativeScore
+          && incoming.bestScore >= existing.bestScore
+          && incoming.highestTileEver >= existing.highestTileEver
+          && incoming.totalMerges >= existing.totalMerges;
+      }
+
+      allow get: if isOwner();
+      // No client ever needs to enumerate other users' documents -- this app never queries the
+      // users collection, only ever gets its own document by (known) uid.
+      allow list: if false;
+      allow create: if isOwner() && isValidProgress(request.resource.data);
+      allow update: if isOwner()
+        && isValidProgress(request.resource.data)
+        && isMonotonic(resource.data, request.resource.data);
+      // Deliberately no delete path: a player's synced progress is never meant to be erasable
+      // from the client, only ever added to. (Account deletion, if ever needed, would be an
+      // admin/Cloud Functions operation outside these rules, not a client capability.)
+      allow delete: if false;
+    }
+  }
+}

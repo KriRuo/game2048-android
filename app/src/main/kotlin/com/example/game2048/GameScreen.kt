@@ -52,6 +52,11 @@ fun Game2048App(viewModel: GameViewModel = viewModel()) {
             onWelcomeDismissed = viewModel::onWelcomeDismissed,
             onDebugResetWelcome = viewModel::onDebugResetWelcome,
             onClaimDailyReward = viewModel::onClaimDailyReward,
+            onSignUp = viewModel::onSignUp,
+            onSignIn = viewModel::onSignIn,
+            onSignOut = viewModel::onSignOut,
+            onResetPassword = viewModel::onResetPassword,
+            onDismissAuthError = viewModel::onDismissAuthError,
             onPlay = {
                 // A game-over board can't be "resumed" -- start fresh in whichever mode was
                 // just picked. An in-progress (or brand new, unplayed) board is left alone so
@@ -102,6 +107,9 @@ fun GameScreen(viewModel: GameViewModel = viewModel(), onNavigateHome: () -> Uni
                     onNewGame = onNewGameRequested,
                     onDebugJumpToLevel30 = viewModel::onDebugJumpToLevel30,
                     onNavigateHome = onNavigateHome,
+                    activeJoker = uiState.activeJoker,
+                    jokerHasPicked = uiState.jokerFirstTileId != null,
+                    onCancelJoker = viewModel::onCancelJoker,
                     modifier = Modifier.padding(end = 24.dp)
                 )
                 BoardArea(
@@ -128,7 +136,10 @@ fun GameScreen(viewModel: GameViewModel = viewModel(), onNavigateHome: () -> Uni
                     levelProgress = uiState.levelProgress,
                     onNewGame = onNewGameRequested,
                     onDebugJumpToLevel30 = viewModel::onDebugJumpToLevel30,
-                    onNavigateHome = onNavigateHome
+                    onNavigateHome = onNavigateHome,
+                    activeJoker = uiState.activeJoker,
+                    jokerHasPicked = uiState.jokerFirstTileId != null,
+                    onCancelJoker = viewModel::onCancelJoker
                 )
                 BoardArea(
                     uiState = uiState,

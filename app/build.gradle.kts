@@ -4,6 +4,25 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    // google-services is NOT listed here -- see the `apply(plugin = ...)` call below. The
+    // `plugins {}` block is evaluated in an isolated scope, statically, before the rest of this
+    // script runs, and can't contain conditional logic referencing any external class (not even
+    // java.io.File) -- only plugin id()/version()/apply-false literals.
+}
+
+// Firebase (Analytics/Crashlytics/Auth/Firestore) needs the google-services plugin applied,
+// which in turn needs app/google-services.json (gitignored -- fetched via
+// `firebase apps:sdkconfig ANDROID <APP_ID> --project <PROJECT_ID>`, never committed). Without
+// it, the plugin is simply not applied and Firebase is left uninitialized -- every call in
+// AppAnalytics.kt/AuthRepository.kt/CloudSyncRepository.kt is defensively guarded for that case,
+// so a fresh clone or CI (neither of which has this file) still builds and runs normally. This
+// `apply(plugin = ...)` (old-style, dynamic) form is used instead of listing it in `plugins {}`
+// above precisely because it needs to be conditional -- see the comment there. The plugin
+// itself is registered (version pinned, not yet applied) via `apply false` in the root
+// build.gradle.kts, which is what makes the bare id below resolvable here.
+val googleServicesFile = file("google-services.json")
+if (googleServicesFile.exists()) {
+    apply(plugin = "com.google.gms.google-services")
 }
 
 // Release signing is intentionally NOT stored in this repo. Drop a keystore.properties
@@ -32,6 +51,10 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // So app code can tell whether Firebase is actually configured in this build without
+        // reaching into Gradle internals -- see AppAnalytics.kt/AuthRepository.kt.
+        buildConfigField("boolean", "FIREBASE_ENABLED", googleServicesFile.exists().toString())
     }
 
     signingConfigs {
@@ -62,6 +85,12 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // Firestore/Auth's gRPC transport touches java.time classes that only exist natively on
+        // API 26+; minSdk here is 24, so without desugaring, loading those classes on an
+        // API 24/25 device throws immediately (NoClassDefFoundError on java.time.*) the moment
+        // Firebase code runs -- a plausible cause of a crash that only shows up with Firebase
+        // present and that no try/catch of ours would have a chance to run before.
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -70,6 +99,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {
@@ -100,6 +130,21 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.6")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.6")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+
+    // Always present so Firebase-using code compiles regardless of whether
+    // google-services.json exists -- see the comment on googleServicesFile above.
+    // Note: NOT the latest BoM (34.19.0 as of this writing) -- its firebase-auth/
+    // play-services-measurement artifacts are compiled against Kotlin 2.2/2.3 metadata, which
+    // this project's Kotlin plugin (pinned to 2.0.21 in the root build.gradle.kts, alongside
+    // AGP/Compose-compiler versions that pair with it) can't read. 33.5.1 is the newest BoM
+    // verified to compile cleanly against that pin.
+    implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
+    implementation("com.google.firebase:firebase-analytics")
+    implementation("com.google.firebase:firebase-crashlytics")
+    implementation("com.google.firebase:firebase-auth")
+    implementation("com.google.firebase:firebase-firestore")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 
     testImplementation("junit:junit:4.13.2")
 

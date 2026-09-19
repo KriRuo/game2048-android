@@ -7,6 +7,53 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Native Android 2048 in Kotlin + Jetpack Compose (Material 3), `applicationId`
 `com.kriruo.game2048`. compileSdk/targetSdk 35, minSdk 24, JVM target 17.
 
+## Current status — where to pick up
+
+Two PRs open against `master`, unmerged:
+
+- **PR #1** (`claude/chat-session-m8ggzs`): Tile Patterns cosmetic axis. Reviewed, Copilot
+  findings addressed, CI green — just needs a merge decision, otherwise done.
+- **PR #2** (`feature/analytics-crashlytics`, this branch): the Firebase backend described
+  below (Analytics, Crashlytics, Auth, Firestore). Had a real crash-on-launch found during
+  phone testing — **confirmed fixed by the user this session, after fix attempt 3 below.**
+  Remaining before merge: the actual sign-up/sign-in flow and a real cross-device sync
+  round-trip haven't been exercised end-to-end yet (still unchecked in the PR's test plan).
+  Crash timeline, for context:
+  1. First real-device build (commit `9242351`) crashed instantly, no screen ever drawn.
+  2. Fix attempt 1 (`7e192aa`): `AuthRepository`/`CloudSyncRepository` had `by lazy` Firebase
+     properties that could throw *outside* their callers' try/catch. Real bug, fixed it —
+     but retested on-device and **still crashed**, same symptom.
+  3. Fix attempt 2 (`a0a4c44`): removed Firebase's automatic `FirebaseInitProvider` startup
+     hook (runs before any app code, before any try/catch we control) via `tools:node="remove"`,
+     moving all init into `AppAnalytics.init()`'s existing try/catch. **Retested on-device —
+     confirmed by the user this session: still crashed, same symptom.**
+  4. Fix attempt 3 (`3706f97`, latest): a different theory — `firebase-firestore`/`firebase-auth`
+     pull in gRPC code that touches `java.time` classes only present natively on API 26+, and
+     this app's `minSdk` is 24 with no core library desugaring enabled. On an API 24/25 device
+     that's a `NoClassDefFoundError` the instant Firebase code runs, which explains a crash that
+     survives attempt 2's fix. Enabled `isCoreLibraryDesugaringEnabled` + `desugar_jdk_libs`.
+     Also added, since attempt 2 already showed a plausible-looking fix can still be wrong on
+     real hardware: `Game2048Application` installs a default uncaught-exception handler that
+     saves the crash stack trace to SharedPreferences, and `MainActivity` shows it as a
+     copyable `AlertDialog` (plain framework view, not Compose) on the very next launch — a way
+     to get a real stack trace off the device without adb. **Built with the real project's
+     `google-services.json` and sent to the user as a test APK this session — confirmed working
+     on-device.** The core library desugaring gap was the real root cause; the crash-capture
+     dialog in `Game2048Application`/`MainActivity` is now just standing infrastructure (never
+     triggered, nothing to remove).
+  - **Next step**: sign-up/sign-in flow and a real cross-device sync round-trip are still
+    unverified end-to-end — exercise those on-device, then this PR is ready for a merge
+    decision alongside PR #1.
+  - **Recipe for sending a test APK**: this sandbox has no Android SDK by default (`ANDROID_HOME`/
+    `local.properties` unset) — install one via `sdkmanager` (cmdline-tools, `platform-tools`,
+    `platforms;android-35`, `build-tools;35.0.0`; needs `yes | sdkmanager --licenses` first) and
+    write `sdk.dir=<path>` to `local.properties`, done once per fresh sandbox. Then:
+    `firebase_update_environment` (project_dir/active_project/active_user_account) →
+    `firebase_get_sdk_config` for the Android app ID → write that JSON to
+    `app/google-services.json` (gitignored — delete it again after the build, never commit it)
+    → `./gradlew assembleDebug` → `SendUserFile` the resulting APK. Firebase CLI account:
+    `kristoffer.ruohonen@gmail.com` for project `game2048-47897` (see "Firebase backend" below).
+
 ## Commands
 
 ```
@@ -24,6 +71,69 @@ are available, not necessarily on the machine running Claude Code.
 Release signing reads an optional, gitignored `keystore.properties` at the repo root
 (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`) — never commit a keystore or its
 credentials.
+
+Firebase (Analytics, Crashlytics, Auth, Firestore) follows the same optional-file pattern as
+release signing: an optional, gitignored `app/google-services.json`. No file present means the
+`com.google.gms.google-services` Gradle plugin is simply never applied (see the `apply(plugin =
+...)` conditional in `app/build.gradle.kts` — it can't live in the `plugins {}` block itself,
+which is statically evaluated before the rest of the script and can't reference a `val` or even
+`java.io.File`), `BuildConfig.FIREBASE_ENABLED` is `false`, and every call into
+`AppAnalytics`/`AuthRepository`/`CloudSyncRepository` no-ops or fails soft — true for every
+fresh clone and for CI today, verified by building with the file removed. Fetch a real one via
+`firebase apps:sdkconfig ANDROID <APP_ID> --project <PROJECT_ID>` (see "Firebase backend"
+below) rather than the Firebase Console UI.
+
+Firebase's own automatic startup hook (`FirebaseInitProvider`) is deliberately removed in
+`AndroidManifest.xml` (`tools:node="remove"`) even though `google-services.json` is present in
+a real build -- it runs before any app code at all (before `MainActivity`, before
+`GameViewModel`), so a bad interaction there crashes the app before a single screen is drawn,
+with no try/catch of ours able to catch it (this is exactly what caused a real crash-on-launch
+during phone testing). `AppAnalytics.init()` is the *only* place Firebase actually initializes
+instead, reading the plugin-generated config via `FirebaseOptions.fromResource(context)` and
+calling `FirebaseApp.initializeApp(...)` manually, entirely inside its own try/catch, after the
+app has already started.
+
+## Firebase backend
+
+Project `game2048-47897` (Firebase Auth + Cloud Firestore only — Analytics/Crashlytics don't
+need any of this, see above). Entirely optional cloud sync layered on top of local play: the
+game is always fully playable signed-out, and every function in the three files below fails
+soft (no-ops, returns null) rather than throwing when Firebase isn't configured or a call fails.
+
+- **Auth** (`AuthRepository.kt`): Email/Password only, enabled via `firebase.json`'s `auth`
+  block + `firebase deploy --only auth` (not via the Console). `AccountDialog.kt` (opened from
+  the ☁️/🔒 icon on `StartScreen`) is the only UI — sign up, sign in, sign out, inline error
+  text. `GameViewModel` exposes `signedInUserId`/`authBusy`/`authError` and reacts to sign-in
+  from anywhere (including Firebase silently restoring a previous session on app open, not just
+  an in-dialog action) via a `viewModelScope` collector on `AuthRepository.currentUserId` set up
+  in `init {}`.
+- **Firestore** (`CloudSyncRepository.kt`): the database is named **`game2048-db`**, NOT
+  `(default)` — this project has no default database, so every access must go through the
+  `FirebaseFirestore.getInstance("game2048-db")` overload, and `firebase.json`'s `firestore`
+  block needs an explicit `"database": "game2048-db"` for CLI commands (`deploy`,
+  `firestore:databases:*`) to target the right one. Enterprise edition, `eur3` (Europe
+  multi-region), delete-protection enabled. One collection: `users/{uid}`, one document per
+  signed-in player, written as a full (non-merge) `.set()` — see `CloudProgress` for the exact
+  field list (a subset of `GameViewModel`'s locally-persisted lifetime stats/preferences).
+- **Sync policy**: on sign-in, `GameViewModel.applyCloudProgressIfSignedIn()` pulls the cloud
+  document and compares `cumulativeScore` — whichever side (device or cloud) has more lifetime
+  progress wins wholesale (adopted entirely, not field-by-field merged), and the other side gets
+  pushed up to match. Every progress-changing local write (`persist()`, plus the three
+  `onSelect*` preference setters, which don't go through `persist()`) triggers a best-effort
+  `syncToCloudIfSignedIn()` push afterward. This is deliberately simple (whole-snapshot
+  last-write-wins-by-score, no per-field timestamps) rather than a general conflict-resolution
+  system — fine for a single-player game with no concurrent-device-editing scenario to speak of.
+- **Security rules** (`firestore.rules`, deployed via `firebase deploy --only firestore`):
+  `users/{uid}` is readable/writable only by `request.auth.uid == uid`; every write is
+  schema-validated (exact field set via `hasOnly`+`hasAll`, every field type-checked, the three
+  `*Id` fields constrained to their real enum values); updates additionally enforce that
+  `cumulativeScore`/`bestScore`/`highestTileEver`/`totalMerges` can't decrease versus the
+  currently-stored document, backing up the client-side "adopt the larger" sync policy above
+  server-side. No `list` (nothing ever queries the collection, only gets a known uid) and no
+  `delete` (a player's synced progress is never client-erasable).
+- **Local dev / CI setup**: `.firebaserc` + `firebase.json` are committed (project ID and this
+  config aren't secret); `app/google-services.json` is not (see above) — fetch your own via the
+  Firebase CLI, logged in as an account with access to project `game2048-47897`.
 
 ## CI/CD
 
@@ -74,10 +184,15 @@ left, roughly in order:
    variables → Actions, if not already done (the `release-build.yml` workflow will fail
    without them — check that first if it's red).
 3. Create the Google Play Console account ($25, identity verification).
-4. Store listing requirements: privacy policy URL, app icon/feature graphic/screenshots,
-   content rating questionnaire, data safety form (likely "no data collected" — everything is
-   local `SharedPreferences`).
-5. First `.aab` upload to Play Console must be manual (Google requires this before any API
+4. ~~Create a Firebase project~~ — done: project `game2048-47897`, Firestore (`game2048-db`,
+   Enterprise, `eur3`) and Email/Password Auth are both live — see "Firebase backend" above.
+   Every dev machine (and CI, if a future workflow needs it) still needs its own
+   `app/google-services.json` fetched via the Firebase CLI, since that file isn't committed.
+5. Store listing requirements: privacy policy URL, app icon/feature graphic/screenshots,
+   content rating questionnaire, data safety form — no longer "no data collected": Firebase
+   Analytics collects app-usage events, and signed-in players' game progress (scores, streaks,
+   preferences — no PII beyond the email/password they signed up with) syncs to Firestore.
+6. First `.aab` upload to Play Console must be manual (Google requires this before any API
    automation can target that app listing) — grab the artifact from a `release-build.yml` run.
 
 **Next technical step once an app exists in Play Console:**

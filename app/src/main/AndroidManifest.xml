@@ -1,13 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <application
+        android:name=".Game2048Application"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.Game2048">
+
+        <!-- Firebase's own automatic startup hook runs before ANY app code, before
+             MainActivity, before GameViewModel, before any of our try/catch guards. A device
+             that crashed instantly on launch (no screen ever drawn) with this present, even
+             with a valid google-services.json, points at something going wrong in that
+             uncontrolled early path. Removed so initialization only ever happens from
+             AppAnalytics.init() below, inside code that's already defensively wrapped and
+             runs safely after the app has actually started. -->
+        <provider
+            android:name="com.google.firebase.provider.FirebaseInitProvider"
+            android:authorities="${applicationId}.firebaseinitprovider"
+            tools:node="remove" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

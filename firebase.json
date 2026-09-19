@@ -1,0 +1,13 @@
+{
+  "firestore": {
+    "database": "game2048-db",
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "auth": {
+    "authorizedDomains": ["localhost"],
+    "providers": {
+      "emailPassword": true
+    }
+  }
+}

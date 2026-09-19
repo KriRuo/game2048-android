@@ -110,17 +110,6 @@ internal fun BoardArea(
                     onJokerCellTap = viewModel::onJokerCellTapped
                 )
 
-                if (uiState.activeJoker != null) {
-                    JokerBanner(
-                        joker = uiState.activeJoker,
-                        hasPicked = uiState.jokerFirstTileId != null,
-                        onCancel = viewModel::onCancelJoker,
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .padding(top = 20.dp)
-                    )
-                }
-
                 ComboPopup(
                     comboCount = uiState.lastMergedTileIds.size,
                     moveToken = uiState.moveToken,

@@ -41,6 +41,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.game2048.logic.Joker
 import com.example.game2048.ui.theme.LocalPaletteColors
 import kotlinx.coroutines.delay
 
@@ -57,7 +58,10 @@ internal fun Header(
     levelProgress: Float,
     onNewGame: () -> Unit,
     onDebugJumpToLevel30: () -> Unit,
-    onNavigateHome: () -> Unit
+    onNavigateHome: () -> Unit,
+    activeJoker: Joker? = null,
+    jokerHasPicked: Boolean = false,
+    onCancelJoker: () -> Unit = {}
 ) {
     val accent = LocalPaletteColors.current.accent
 
@@ -127,8 +131,16 @@ internal fun Header(
         modifier = Modifier
             .fillMaxWidth()
             .padding(top = 14.dp),
-        horizontalArrangement = Arrangement.End
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
+        // Lives here (rather than overlaid on the board) so aiming a Joker never hides the
+        // tile values the player needs to see to make their pick -- see JokerBanner's doc.
+        if (activeJoker != null) {
+            JokerBanner(joker = activeJoker, hasPicked = jokerHasPicked, onCancel = onCancelJoker)
+        } else {
+            Spacer(modifier = Modifier.width(1.dp))
+        }
         OutlinedButton(
             onClick = onNewGame,
             shape = RoundedCornerShape(10.dp),
@@ -154,7 +166,10 @@ internal fun Sidebar(
     onNewGame: () -> Unit,
     onDebugJumpToLevel30: () -> Unit,
     onNavigateHome: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    activeJoker: Joker? = null,
+    jokerHasPicked: Boolean = false,
+    onCancelJoker: () -> Unit = {}
 ) {
     val accent = LocalPaletteColors.current.accent
 
@@ -222,6 +237,17 @@ internal fun Sidebar(
         ScoreChip(label = "BEST", value = best)
 
         Spacer(modifier = Modifier.height(24.dp))
+        // Lives here (rather than overlaid on the board) so aiming a Joker never hides the
+        // tile values the player needs to see to make their pick -- see JokerBanner's doc.
+        if (activeJoker != null) {
+            JokerBanner(
+                joker = activeJoker,
+                hasPicked = jokerHasPicked,
+                onCancel = onCancelJoker,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+        }
         OutlinedButton(
             onClick = onNewGame,
             shape = RoundedCornerShape(10.dp),
