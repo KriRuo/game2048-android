@@ -3,9 +3,12 @@
 Entries here are keyed by **`versionCode`** (see `app/build.gradle.kts`), not `versionName`
 (a static `"1.0"` until someone bumps it by hand) — this is the same identifier
 `CloudSyncRepository` writes to every signed-in account's Firestore doc as `appVersionCode`, and
-that Firebase Analytics/Crashlytics already tag every event/crash with automatically. So when a
-bug report says "I'm seeing X", checking their account's (or their crash's) version against a
-dated entry below tells you exactly what build they're on, without reconstructing git history.
+that Crashlytics automatically tags every crash report with. So when a bug report says "I'm
+seeing X", checking their account's (or their crash's) `versionCode` against a dated entry below
+tells you exactly what build they're on, without reconstructing git history. Firebase Analytics'
+own automatic app-version dimension is `versionName`, not `versionCode` — since `versionName`
+stays static at `"1.0"` here, Analytics events can't currently be matched to a specific entry
+this way; log `versionCode` as an explicit event parameter first if that's ever needed.
 
 Local and CI (`ci.yml`) builds never pass `-PversionCode`, so they're always `versionCode = 1` —
 only a `release-build.yml` run produces a real, meaningful number (it passes `github.run_number`

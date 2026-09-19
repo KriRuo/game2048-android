@@ -910,6 +910,11 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             when (val outcome = AuthRepository.signUp(trimmedEmail, password)) {
                 is AuthRepository.Outcome.Success -> {
+                    // Sets the uid synchronously from the outcome we already have, rather than
+                    // waiting on the currentUserId collector's async AuthStateListener callback,
+                    // which could otherwise still be pending when logSignUp() fires -- that race
+                    // would log this event anonymously (or under a previously signed-in uid).
+                    AppAnalytics.setUserId(outcome.uid)
                     AppAnalytics.logSignUp()
                     _uiState.value = _uiState.value.copy(authBusy = false, authError = null)
                 }
@@ -931,6 +936,8 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             when (val outcome = AuthRepository.signIn(trimmedEmail, password)) {
                 is AuthRepository.Outcome.Success -> {
+                    // Same race as onSignUp above -- set the uid from the outcome before logging.
+                    AppAnalytics.setUserId(outcome.uid)
                     AppAnalytics.logSignIn()
                     _uiState.value = _uiState.value.copy(authBusy = false, authError = null)
                 }
