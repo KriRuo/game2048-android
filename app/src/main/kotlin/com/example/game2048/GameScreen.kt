@@ -55,6 +55,7 @@ fun Game2048App(viewModel: GameViewModel = viewModel()) {
             onSignUp = viewModel::onSignUp,
             onSignIn = viewModel::onSignIn,
             onSignOut = viewModel::onSignOut,
+            onResetPassword = viewModel::onResetPassword,
             onDismissAuthError = viewModel::onDismissAuthError,
             onPlay = {
                 // A game-over board can't be "resumed" -- start fresh in whichever mode was

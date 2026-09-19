@@ -38,6 +38,11 @@ private const val KEY_GAMES_PLAYED = "games_played"
 private const val KEY_HIGHEST_TILE_EVER = "highest_tile_ever"
 private const val KEY_TOTAL_MERGES = "total_merges"
 private const val KEY_HAS_SEEN_WELCOME = "has_seen_welcome"
+/** The uid last signed into on this device -- lets [GameViewModel.applyCloudProgressIfSignedIn]
+ *  tell "this device's own progress, being claimed by its first account" (a legitimate push)
+ *  apart from "leftover progress from whoever was signed in here before" (which a brand-new
+ *  second account must NOT silently inherit). */
+private const val KEY_LAST_SYNCED_UID = "last_synced_uid"
 
 /** Single-move undos allowed per game (see [GameViewModel.onUndo]). Intentionally *not*
  *  persisted across a process restart, along with the one-move [GameUiState.undoState] snapshot
@@ -150,9 +155,13 @@ data class GameUiState(
     /** True while a sign-up/sign-in request is in flight, so [AccountDialog] can disable its
      *  buttons and show a spinner instead of allowing a duplicate submit. */
     val authBusy: Boolean = false,
-    /** Message from the last failed sign-up/sign-in attempt, or null -- cleared by
+    /** Message from the last failed sign-up/sign-in/reset attempt, or null -- cleared by
      *  [GameViewModel.onDismissAuthError] or the next attempt. */
-    val authError: String? = null
+    val authError: String? = null,
+    /** True right after [GameViewModel.onResetPassword] succeeds, so [AccountDialog] can show
+     *  a "check your inbox" confirmation -- cleared by [GameViewModel.onDismissAuthError] or
+     *  the next sign-in/sign-up/reset attempt. */
+    val passwordResetSent: Boolean = false
 )
 
 /**
@@ -717,58 +726,113 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
      *  Cloud progress wins over local only when it represents *more* lifetime progress
      *  ([CloudProgress.cumulativeScore] higher than this device's) -- otherwise this device's
      *  local progress is the more advanced one, so it's pushed up to the cloud instead. Either
-     *  way this never loses progress on either side, only ever adopts the larger of the two. */
+     *  way this never loses progress on either side, only ever adopts the larger of the two.
+     *
+     *  Exception: a brand-new account (no cloud doc yet) signing in on a device that was last
+     *  signed into a *different* account never adopts-and-pushes local progress -- that local
+     *  progress belongs to whoever used this device before, not to this new account. See
+     *  [KEY_LAST_SYNCED_UID] and [resetLocalProgressForNewIdentity]. */
     private fun applyCloudProgressIfSignedIn(uid: String) {
         viewModelScope.launch {
             val cloud = CloudSyncRepository.pull(uid)
+            val lastSyncedUid = prefs.getString(KEY_LAST_SYNCED_UID, null)
+            prefs.edit().putString(KEY_LAST_SYNCED_UID, uid).apply()
+
+            if (cloud == null && lastSyncedUid != null && lastSyncedUid != uid) {
+                resetLocalProgressForNewIdentity()
+                syncToCloudIfSignedIn()
+                return@launch
+            }
+
             if (cloud == null || cloud.cumulativeScore <= cumulativeScore) {
                 syncToCloudIfSignedIn()
                 return@launch
             }
 
-            cumulativeScore = cloud.cumulativeScore
-            bestScore = maxOf(bestScore, cloud.bestScore)
-            highestTileEver = maxOf(highestTileEver, cloud.highestTileEver)
-            totalMerges = maxOf(totalMerges, cloud.totalMerges)
-            gamesPlayed = maxOf(gamesPlayed, cloud.gamesPlayed)
-            selectedPalette = TilePalette.fromId(cloud.selectedPaletteId)
-            selectedBoardSize = BoardSizeOption.fromId(cloud.selectedBoardSizeId)
-            selectedGameMode = GameMode.fromId(cloud.selectedGameModeId)
-
-            val streak = StreakState(
-                current = cloud.currentStreak,
-                longest = cloud.longestStreak,
-                lastPlayedEpochDay = cloud.streakLastPlayedEpochDay
-            )
-            saveStreak(streak)
-            prefs.edit()
-                .putLong(KEY_CUMULATIVE_SCORE, cumulativeScore)
-                .putInt(KEY_BEST_SCORE, bestScore)
-                .putInt(KEY_HIGHEST_TILE_EVER, highestTileEver)
-                .putLong(KEY_TOTAL_MERGES, totalMerges)
-                .putInt(KEY_GAMES_PLAYED, gamesPlayed)
-                .putString(KEY_SELECTED_PALETTE, selectedPalette.id)
-                .putString(KEY_SELECTED_BOARD_SIZE, selectedBoardSize.id)
-                .putString(KEY_SELECTED_GAME_MODE, selectedGameMode.id)
-                .commit()
-
-            val level = LevelTracker.levelForCumulativeScore(cumulativeScore)
-            val current = _uiState.value
-            _uiState.value = current.copy(
-                level = level,
-                levelProgress = LevelTracker.progressToNextLevel(cumulativeScore),
-                cumulativeScore = cumulativeScore,
-                highestTileEver = highestTileEver,
-                totalMerges = totalMerges,
-                gamesPlayed = gamesPlayed,
-                selectedPalette = selectedPalette,
-                selectedBoardSize = selectedBoardSize,
-                gameMode = selectedGameMode,
-                currentStreak = streak.current,
-                longestStreak = streak.longest,
-                game = current.game.copy(best = bestScore)
+            applyProgressSnapshot(
+                cumulativeScore = cloud.cumulativeScore,
+                bestScore = maxOf(bestScore, cloud.bestScore),
+                highestTileEver = maxOf(highestTileEver, cloud.highestTileEver),
+                totalMerges = maxOf(totalMerges, cloud.totalMerges),
+                gamesPlayed = maxOf(gamesPlayed, cloud.gamesPlayed),
+                selectedPalette = TilePalette.fromId(cloud.selectedPaletteId),
+                selectedBoardSize = BoardSizeOption.fromId(cloud.selectedBoardSizeId),
+                selectedGameMode = GameMode.fromId(cloud.selectedGameModeId),
+                streak = StreakState(
+                    current = cloud.currentStreak,
+                    longest = cloud.longestStreak,
+                    lastPlayedEpochDay = cloud.streakLastPlayedEpochDay
+                )
             )
         }
+    }
+
+    /** A fresh identity on this device starts with a clean slate -- same defaults as a brand
+     *  new install -- rather than silently inheriting whatever the previously-signed-in account
+     *  left in local storage. See [applyCloudProgressIfSignedIn]. */
+    private fun resetLocalProgressForNewIdentity() {
+        applyProgressSnapshot(
+            cumulativeScore = 0L,
+            bestScore = 0,
+            highestTileEver = 0,
+            totalMerges = 0L,
+            gamesPlayed = 0,
+            selectedPalette = TilePalette.DEFAULT,
+            selectedBoardSize = BoardSizeOption.DEFAULT,
+            selectedGameMode = GameMode.DEFAULT,
+            streak = StreakState(current = 0, longest = 0, lastPlayedEpochDay = 0L)
+        )
+    }
+
+    /** Writes a full lifetime-progress snapshot to memory, [prefs], and [_uiState] in one place
+     *  -- shared by the cloud-adopt and new-identity-reset paths in [applyCloudProgressIfSignedIn]. */
+    private fun applyProgressSnapshot(
+        cumulativeScore: Long,
+        bestScore: Int,
+        highestTileEver: Int,
+        totalMerges: Long,
+        gamesPlayed: Int,
+        selectedPalette: TilePalette,
+        selectedBoardSize: BoardSizeOption,
+        selectedGameMode: GameMode,
+        streak: StreakState
+    ) {
+        this.cumulativeScore = cumulativeScore
+        this.bestScore = bestScore
+        this.highestTileEver = highestTileEver
+        this.totalMerges = totalMerges
+        this.gamesPlayed = gamesPlayed
+        this.selectedPalette = selectedPalette
+        this.selectedBoardSize = selectedBoardSize
+        this.selectedGameMode = selectedGameMode
+        saveStreak(streak)
+        prefs.edit()
+            .putLong(KEY_CUMULATIVE_SCORE, cumulativeScore)
+            .putInt(KEY_BEST_SCORE, bestScore)
+            .putInt(KEY_HIGHEST_TILE_EVER, highestTileEver)
+            .putLong(KEY_TOTAL_MERGES, totalMerges)
+            .putInt(KEY_GAMES_PLAYED, gamesPlayed)
+            .putString(KEY_SELECTED_PALETTE, selectedPalette.id)
+            .putString(KEY_SELECTED_BOARD_SIZE, selectedBoardSize.id)
+            .putString(KEY_SELECTED_GAME_MODE, selectedGameMode.id)
+            .commit()
+
+        val level = LevelTracker.levelForCumulativeScore(cumulativeScore)
+        val current = _uiState.value
+        _uiState.value = current.copy(
+            level = level,
+            levelProgress = LevelTracker.progressToNextLevel(cumulativeScore),
+            cumulativeScore = cumulativeScore,
+            highestTileEver = highestTileEver,
+            totalMerges = totalMerges,
+            gamesPlayed = gamesPlayed,
+            selectedPalette = selectedPalette,
+            selectedBoardSize = selectedBoardSize,
+            gameMode = selectedGameMode,
+            currentStreak = streak.current,
+            longestStreak = streak.longest,
+            game = current.game.copy(best = bestScore)
+        )
     }
 
     /** No-ops if Firebase isn't configured for this build. On success, [onSwipe]/etc. will pick
@@ -777,7 +841,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun onSignUp(email: String, password: String) {
         val current = _uiState.value
         if (current.authBusy) return
-        _uiState.value = current.copy(authBusy = true, authError = null)
+        _uiState.value = current.copy(authBusy = true, authError = null, passwordResetSent = false)
         viewModelScope.launch {
             when (val outcome = AuthRepository.signUp(email, password)) {
                 is AuthRepository.Outcome.Success ->
@@ -791,7 +855,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     fun onSignIn(email: String, password: String) {
         val current = _uiState.value
         if (current.authBusy) return
-        _uiState.value = current.copy(authBusy = true, authError = null)
+        _uiState.value = current.copy(authBusy = true, authError = null, passwordResetSent = false)
         viewModelScope.launch {
             when (val outcome = AuthRepository.signIn(email, password)) {
                 is AuthRepository.Outcome.Success ->
@@ -807,7 +871,27 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         AuthRepository.signOut()
     }
 
+    /** Sends a Firebase password-reset email. No-ops with a friendly error if [email] is blank
+     *  rather than letting Firebase's own validation error surface instead. */
+    fun onResetPassword(email: String) {
+        val current = _uiState.value
+        if (current.authBusy) return
+        if (email.isBlank()) {
+            _uiState.value = current.copy(authError = "Enter your email above first.", passwordResetSent = false)
+            return
+        }
+        _uiState.value = current.copy(authBusy = true, authError = null, passwordResetSent = false)
+        viewModelScope.launch {
+            when (val outcome = AuthRepository.sendPasswordResetEmail(email)) {
+                is AuthRepository.ResetOutcome.Sent ->
+                    _uiState.value = _uiState.value.copy(authBusy = false, passwordResetSent = true)
+                is AuthRepository.ResetOutcome.Failure ->
+                    _uiState.value = _uiState.value.copy(authBusy = false, authError = outcome.message)
+            }
+        }
+    }
+
     fun onDismissAuthError() {
-        _uiState.value = _uiState.value.copy(authError = null)
+        _uiState.value = _uiState.value.copy(authError = null, passwordResetSent = false)
     }
 }

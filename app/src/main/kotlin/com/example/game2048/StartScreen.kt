@@ -74,6 +74,7 @@ internal fun StartScreen(
     onSignUp: (email: String, password: String) -> Unit,
     onSignIn: (email: String, password: String) -> Unit,
     onSignOut: () -> Unit,
+    onResetPassword: (email: String) -> Unit,
     onDismissAuthError: () -> Unit
 ) {
     val accent = LocalPaletteColors.current.accent
@@ -258,9 +259,11 @@ internal fun StartScreen(
             signedInUserId = uiState.signedInUserId,
             authBusy = uiState.authBusy,
             authError = uiState.authError,
+            passwordResetSent = uiState.passwordResetSent,
             onSignUp = onSignUp,
             onSignIn = onSignIn,
             onSignOut = onSignOut,
+            onResetPassword = onResetPassword,
             onDismissError = onDismissAuthError,
             onDismiss = { showAccount = false }
         )

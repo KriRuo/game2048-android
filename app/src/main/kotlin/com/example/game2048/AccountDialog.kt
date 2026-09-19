@@ -28,9 +28,11 @@ internal fun AccountDialog(
     signedInUserId: String?,
     authBusy: Boolean,
     authError: String?,
+    passwordResetSent: Boolean,
     onSignUp: (email: String, password: String) -> Unit,
     onSignIn: (email: String, password: String) -> Unit,
     onSignOut: () -> Unit,
+    onResetPassword: (email: String) -> Unit,
     onDismissError: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -44,9 +46,11 @@ internal fun AccountDialog(
                 AccountForm(
                     busy = authBusy,
                     error = authError,
+                    passwordResetSent = passwordResetSent,
                     onDismissError = onDismissError,
                     onSignUp = onSignUp,
-                    onSignIn = onSignIn
+                    onSignIn = onSignIn,
+                    onResetPassword = onResetPassword
                 )
             }
         },
@@ -69,9 +73,11 @@ internal fun AccountDialog(
 private fun AccountForm(
     busy: Boolean,
     error: String?,
+    passwordResetSent: Boolean,
     onDismissError: () -> Unit,
     onSignUp: (email: String, password: String) -> Unit,
-    onSignIn: (email: String, password: String) -> Unit
+    onSignIn: (email: String, password: String) -> Unit,
+    onResetPassword: (email: String) -> Unit
 ) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
@@ -81,7 +87,7 @@ private fun AccountForm(
             value = email,
             onValueChange = {
                 email = it
-                if (error != null) onDismissError()
+                onDismissError()
             },
             label = { Text("Email") },
             singleLine = true,
@@ -92,7 +98,7 @@ private fun AccountForm(
             value = password,
             onValueChange = {
                 password = it
-                if (error != null) onDismissError()
+                onDismissError()
             },
             label = { Text("Password") },
             singleLine = true,
@@ -102,6 +108,16 @@ private fun AccountForm(
         )
         if (error != null) {
             Text(error, color = MaterialTheme.colorScheme.error)
+        }
+        if (passwordResetSent) {
+            Text(
+                "Reset email sent to $email — check your inbox.",
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        TextButton(onClick = { onResetPassword(email) }, enabled = !busy) {
+            Text("Forgot password?", style = MaterialTheme.typography.labelMedium)
         }
         Row(
             modifier = Modifier.fillMaxWidth(),

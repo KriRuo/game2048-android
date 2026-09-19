@@ -23,6 +23,11 @@ object AuthRepository {
         data class Failure(val message: String) : Outcome
     }
 
+    sealed interface ResetOutcome {
+        data object Sent : ResetOutcome
+        data class Failure(val message: String) : ResetOutcome
+    }
+
     // Never throws -- FirebaseAuth.getInstance() failing (for any reason) just leaves this
     // null, same as FIREBASE_ENABLED being false, rather than crashing every caller including
     // init() below, which GameViewModel calls unconditionally on every app launch.
@@ -71,6 +76,16 @@ object AuthRepository {
             Outcome.Success(uid)
         } catch (t: Exception) {
             Outcome.Failure(t.message ?: "Sign-in failed.")
+        }
+    }
+
+    suspend fun sendPasswordResetEmail(email: String): ResetOutcome {
+        val firebaseAuth = auth ?: return ResetOutcome.Failure("Cloud sync isn't set up for this build.")
+        return try {
+            firebaseAuth.sendPasswordResetEmail(email).await()
+            ResetOutcome.Sent
+        } catch (t: Exception) {
+            ResetOutcome.Failure(t.message ?: "Couldn't send the reset email.")
         }
     }
 
