@@ -49,7 +49,10 @@ internal fun JokerBanner(joker: Joker, hasPicked: Boolean, onCancel: () -> Unit,
             text = instruction,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onBackground
+            color = MaterialTheme.colorScheme.onBackground,
+            // Weighted so this wraps instead of pushing the ✕ off-screen when the banner sits
+            // somewhere narrower than its natural single-line width (e.g. the landscape Sidebar).
+            modifier = Modifier.weight(1f, fill = false)
         )
         Text(
             text = "✕",

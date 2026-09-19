@@ -106,6 +106,9 @@ fun GameScreen(viewModel: GameViewModel = viewModel(), onNavigateHome: () -> Uni
                     onNewGame = onNewGameRequested,
                     onDebugJumpToLevel30 = viewModel::onDebugJumpToLevel30,
                     onNavigateHome = onNavigateHome,
+                    activeJoker = uiState.activeJoker,
+                    jokerHasPicked = uiState.jokerFirstTileId != null,
+                    onCancelJoker = viewModel::onCancelJoker,
                     modifier = Modifier.padding(end = 24.dp)
                 )
                 BoardArea(
@@ -132,7 +135,10 @@ fun GameScreen(viewModel: GameViewModel = viewModel(), onNavigateHome: () -> Uni
                     levelProgress = uiState.levelProgress,
                     onNewGame = onNewGameRequested,
                     onDebugJumpToLevel30 = viewModel::onDebugJumpToLevel30,
-                    onNavigateHome = onNavigateHome
+                    onNavigateHome = onNavigateHome,
+                    activeJoker = uiState.activeJoker,
+                    jokerHasPicked = uiState.jokerFirstTileId != null,
+                    onCancelJoker = viewModel::onCancelJoker
                 )
                 BoardArea(
                     uiState = uiState,
