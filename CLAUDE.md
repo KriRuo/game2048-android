@@ -9,55 +9,64 @@ Native Android 2048 in Kotlin + Jetpack Compose (Material 3), `applicationId`
 
 ## Current status — where to pick up
 
-Two PRs open against `master`, unmerged:
+`master` is in a good, verified state: CI (`test` + `build`) green, all 83 JUnit tests pass,
+working tree clean. One thing is still outstanding:
 
-- **PR #1** (`claude/chat-session-m8ggzs`): Tile Patterns cosmetic axis. Reviewed, Copilot
-  findings addressed, CI green — just needs a merge decision, otherwise done.
-- **PR #2** (`feature/analytics-crashlytics`, this branch): the Firebase backend described
-  below (Analytics, Crashlytics, Auth, Firestore). Had a real crash-on-launch found during
-  phone testing — **confirmed fixed by the user this session, after fix attempt 3 below.**
-  Remaining before merge: the actual sign-up/sign-in flow and a real cross-device sync
-  round-trip haven't been exercised end-to-end yet (still unchecked in the PR's test plan).
-  Crash timeline, for context:
-  1. First real-device build (commit `9242351`) crashed instantly, no screen ever drawn.
-  2. Fix attempt 1 (`7e192aa`): `AuthRepository`/`CloudSyncRepository` had `by lazy` Firebase
-     properties that could throw *outside* their callers' try/catch. Real bug, fixed it —
-     but retested on-device and **still crashed**, same symptom.
-  3. Fix attempt 2 (`a0a4c44`): removed Firebase's automatic `FirebaseInitProvider` startup
-     hook (runs before any app code, before any try/catch we control) via `tools:node="remove"`,
-     moving all init into `AppAnalytics.init()`'s existing try/catch. **Retested on-device —
-     confirmed by the user this session: still crashed, same symptom.**
-  4. Fix attempt 3 (`3706f97`, latest): a different theory — `firebase-firestore`/`firebase-auth`
-     pull in gRPC code that touches `java.time` classes only present natively on API 26+, and
-     this app's `minSdk` is 24 with no core library desugaring enabled. On an API 24/25 device
-     that's a `NoClassDefFoundError` the instant Firebase code runs, which explains a crash that
-     survives attempt 2's fix. Enabled `isCoreLibraryDesugaringEnabled` + `desugar_jdk_libs`.
-     Also added, since attempt 2 already showed a plausible-looking fix can still be wrong on
-     real hardware: `Game2048Application` installs a default uncaught-exception handler that
-     saves the crash stack trace to SharedPreferences, and `MainActivity` shows it as a
-     copyable `AlertDialog` (plain framework view, not Compose) on the very next launch — a way
-     to get a real stack trace off the device without adb. **Built with the real project's
-     `google-services.json` and sent to the user as a test APK this session — confirmed working
-     on-device.** The core library desugaring gap was the real root cause; the crash-capture
-     dialog in `Game2048Application`/`MainActivity` is now just standing infrastructure (never
-     triggered, nothing to remove).
-  - **Next step**: sign-up/sign-in flow and a real cross-device sync round-trip are still
-    unverified end-to-end — exercise those on-device, then this PR is ready for a merge
-    decision alongside PR #1.
-  - **Recipe for sending a test APK**: this sandbox has no Android SDK by default (`ANDROID_HOME`/
-    `local.properties` unset) — install one via `sdkmanager` (cmdline-tools, `platform-tools`,
-    `platforms;android-35`, `build-tools;35.0.0`; needs `yes | sdkmanager --licenses` first) and
-    write `sdk.dir=<path>` to `local.properties`, done once per fresh sandbox. Then:
-    `firebase_update_environment` (project_dir/active_project/active_user_account) →
-    `firebase_get_sdk_config` for the Android app ID → write that JSON to
-    `app/google-services.json` (gitignored — delete it again after the build, never commit it)
-    → `./gradlew assembleDebug` → `SendUserFile` the resulting APK. Firebase CLI account:
-    `kristoffer.ruohonen@gmail.com` for project `game2048-47897` (see "Firebase backend" below).
+- **PR #1** (`claude/chat-session-m8ggzs`) is still open and needs attention before it's
+  mergeable. It adds `TilePattern` as a second cosmetic axis past Level 30
+  (Solid/Stripes/Camo/Bubbles) plus a combined Appearance dialog replacing `ThemePickerDialog`.
+  Its own description says it was never actually build-verified (the session that wrote it
+  couldn't reach `dl.google.com` to fetch the Android Gradle Plugin), and its base commit
+  predates the entire Firebase backend below plus everything shipped since -- it needs a rebase
+  onto current `master`, a real `./gradlew test assembleDebug` pass, and a fresh look at whether
+  its changes still make sense next to what's landed since, before it's ready for a merge
+  decision.
+
+Everything else -- the Firebase backend (PR #2), the crash-on-launch found during phone testing
+(root-caused to a missing `isCoreLibraryDesugaringEnabled`, see `app/build.gradle.kts`, and
+confirmed fixed on-device), and a real sign-up/sign-in + cross-device sync round-trip -- is
+merged and verified. Since PR #2 merged, the following has landed directly on `master`
+(`CHANGELOG.md` has the full dated list -- this is just what changes how you'd work here):
+
+- **Auth polish**: password reset (`AuthRepository.sendPasswordResetEmail`), sign-in/up/reset
+  error messages mapped from `FirebaseAuthException` codes instead of Firebase's raw exception
+  text, and a fix for a real data-integrity bug where signing out never cleared local stats, so
+  a second brand-new account on the same device could silently inherit the first account's
+  progress (see `KEY_LAST_SYNCED_UID` in `GameViewModel.kt`).
+- **`GameMode` is now two fields, not one** -- see "Architecture" below. Closed a real bug where
+  picking a different mode on the Start Screen could retroactively grant Jokers on a board
+  already in progress.
+- Each Joker now gives **1 use per game**, down from 2 (`MAX_TELEPORTS`/`MAX_SWAPS`/`MAX_BOMBS`/
+  `MAX_DOUBLES`/`MAX_ROTATES` in `GameViewModel.kt`).
+- `CloudProgress` carries `appVersionName`/`appVersionCode` now, so a Firestore query against
+  `users/{uid}` can answer "which build is this account on" directly -- see `CHANGELOG.md`'s own
+  header for why that's not redundant with Analytics' automatic (but anonymous) version
+  dimension.
+- `AppAnalytics.setUserId()` ties Crashlytics reports and Analytics events to the signed-in uid;
+  new `sign_up`/`sign_in`/`game_over`/`joker_used` events joined the original
+  `game_started`/`level_up`/`streak_milestone`/`*_unlocked` ones.
+- **Daily Challenge**: a new mode (`logic/DailyChallengeTracker.kt`, `DailyChallengeScreen.kt`)
+  -- one fixed-seed, 30-move-capped board shared by every player on a given calendar day, one
+  attempt, no Undo/Jokers, +50 XP for completing it. Reachable from a new card on `StartScreen`.
+  Local-only for now (not synced to Firestore).
+- `CHANGELOG.md` now exists, keyed by `versionCode` (see its own header for why) -- add an entry
+  there for any user-facing or architecturally-notable change, the same turn you make it.
+
+**Recipe for sending a test APK**: check for a pre-existing SDK at `/home/user/android-sdk`
+first (present in at least one recent sandbox) before installing a fresh one -- if it's missing,
+install via `sdkmanager` (cmdline-tools, `platform-tools`, `platforms;android-35`,
+`build-tools;35.0.0`; needs `yes | sdkmanager --licenses` first). Either way, write
+`sdk.dir=<path>` to `local.properties` (gitignored, so this is needed once per fresh sandbox).
+Then: `firebase_update_environment` (project_dir/active_project/active_user_account) →
+`firebase_get_sdk_config` for the Android app ID → write that JSON to `app/google-services.json`
+(gitignored — delete it again after the build, never commit it) → `./gradlew assembleDebug` →
+`SendUserFile` the resulting APK. Firebase CLI account: `kristoffer.ruohonen@gmail.com` for
+project `game2048-47897` (see "Firebase backend" below).
 
 ## Commands
 
 ```
-./gradlew test                 # run all 73 JUnit tests (logic package only, no Android deps)
+./gradlew test                 # run all 83 JUnit tests (logic package only, no Android deps)
 ./gradlew test --tests "com.example.game2048.logic.Game2048EngineTest"   # single test class
 ./gradlew assembleDebug        # debug APK
 ./gradlew assembleRelease      # release APK (unsigned unless keystore.properties is present)
@@ -95,10 +104,13 @@ app has already started.
 
 ## Firebase backend
 
-Project `game2048-47897` (Firebase Auth + Cloud Firestore only — Analytics/Crashlytics don't
-need any of this, see above). Entirely optional cloud sync layered on top of local play: the
-game is always fully playable signed-out, and every function in the three files below fails
-soft (no-ops, returns null) rather than throwing when Firebase isn't configured or a call fails.
+Project `game2048-47897`. Auth + Firestore are entirely optional cloud sync layered on top of
+local play: the game is always fully playable signed-out, and every function in the three files
+below fails soft (no-ops, returns null) rather than throwing when Firebase isn't configured or a
+call fails. Analytics/Crashlytics don't need any of Auth/Firestore's setup below to work, but
+`AppAnalytics.setUserId()` *does* tie both of them to the signed-in uid once there is one (see
+`GameViewModel`'s `AuthRepository.currentUserId` collector) -- see "Architecture" for the event
+catalog.
 
 - **Auth** (`AuthRepository.kt`): Email/Password only, enabled via `firebase.json`'s `auth`
   block + `firebase deploy --only auth` (not via the Console). `AccountDialog.kt` (opened from
@@ -114,7 +126,10 @@ soft (no-ops, returns null) rather than throwing when Firebase isn't configured 
   `firestore:databases:*`) to target the right one. Enterprise edition, `eur3` (Europe
   multi-region), delete-protection enabled. One collection: `users/{uid}`, one document per
   signed-in player, written as a full (non-merge) `.set()` — see `CloudProgress` for the exact
-  field list (a subset of `GameViewModel`'s locally-persisted lifetime stats/preferences).
+  field list (a subset of `GameViewModel`'s locally-persisted lifetime stats/preferences, plus
+  `appVersionName`/`appVersionCode` from `BuildConfig` so a query can answer "which build is
+  this account on" per-account, not just anonymously the way Analytics' own version dimension
+  does).
 - **Sync policy**: on sign-in, `GameViewModel.applyCloudProgressIfSignedIn()` pulls the cloud
   document and compares `cumulativeScore` — whichever side (device or cloud) has more lifetime
   progress wins wholesale (adopted entirely, not field-by-field merged), and the other side gets
@@ -141,7 +156,7 @@ Two workflows under `.github/workflows/`:
 
 - **`ci.yml`** — runs on every push to `master` and every pull request targeting `master`.
   Two independent jobs, each its own status check on the PR: `test` (`./gradlew test`, the
-  73 JUnit tests, with the HTML report uploaded as a workflow artifact) and `build`
+  83 JUnit tests, with the HTML report uploaded as a workflow artifact) and `build`
   (`./gradlew assembleDebug`, a compile-only sanity check). A red check here is what used to
   require asking Claude to run tests/build manually — it's now automatic and visible directly
   on the PR/commit.
@@ -228,6 +243,14 @@ board, streak, and level to `SharedPreferences` (`GameStateSerializer.kt` handle
 `GameState` (de)serialization). There is no repository/DB layer — SharedPreferences is the
 only persistence.
 
+**Analytics event catalog** (`AppAnalytics.kt`, all no-ops without `google-services.json`):
+`game_started`, `level_up`, `streak_milestone`, `theme_unlocked`/`pattern_unlocked`/
+`board_size_unlocked`, `sign_up`, `sign_in`, `game_over` (score + level), `joker_used` (which
+Joker). `AppAnalytics.setUserId()` ties all of these, plus Crashlytics crash reports, to the
+signed-in Firebase Auth uid (never PII) once `GameViewModel`'s sign-in collector sees one, so a
+specific tester's bug report can be correlated to a crash or an event stream instead of staying
+anonymous per device.
+
 **Progression systems are independent, pure, and separately unit tested** — same pattern as
 the engine, each with no Android or Compose dependency:
 - `LevelTracker` — cumulative score across all games → player Level (triangular XP curve).
@@ -238,20 +261,43 @@ the engine, each with no Android or Compose dependency:
   engine depends on it.
 - `ThemeUnlocks` — tile color palette definitions (Clay/Meadow/Midnight/Berry/Cyber) and their
   unlock levels.
+- `DailyChallengeTracker` — the daily challenge's completion state (last/best score) and its
+  per-day seed derivation; see the Daily Challenge paragraph below.
 
-`GameMode` (ORIGINAL vs. EXTENDED) only changes which actions the UI exposes (Undo, Jokers);
-switching modes mid-game never touches the board in progress.
+`GameMode` (ORIGINAL vs. EXTENDED) changes which actions the UI exposes (Undo, Jokers). It's two
+separate fields on `GameUiState`, not one: `gameMode` is locked to whichever board is actually
+active (set once, at New Game) and is what actually gates Undo/Jokers; `selectedGameMode` is
+just the Start Screen's preference for the *next* New Game, same pattern as
+`selectedBoardSize`/`selectedPalette`. `Game2048App`'s `onPlay` compares the two and starts a
+fresh board whenever they differ, the same way it already does for a game-over board -- so
+picking a different mode can never retroactively grant (or take away) Jokers/Undo on a board
+already in progress. The active board's mode is persisted on its own (`KEY_ACTIVE_GAME_MODE`,
+written at New Game) rather than recomputed from the current preference on every launch.
+
+**Daily Challenge** is a separate, smaller game mode living almost entirely outside the above:
+`GameViewModel` keeps its board (`dailyChallengeGame`) and a separately-seeded `Game2048Engine`
+instance (`Game2048Engine(random = Random(DailyChallengeTracker.seedFor(epochDay)))`) entirely
+apart from the regular, persisted `game`/`engine` -- same local-calendar-day convention as
+`StreakTracker`, but every player gets an identical board and spawn sequence for the same day,
+capped at `DailyChallengeTracker.MOVE_CAP` moves, no Undo/Jokers, one attempt per day. Its board
+isn't persisted across a process restart (killing the app mid-attempt just restarts today's
+identical seed from scratch) -- same not-a-big-deal tradeoff `MAX_UNDOS` already makes.
+Deliberately not folded into the existing streak (see `CHANGELOG.md`'s entry for why) and not
+synced to Firestore yet.
 
 **Compose UI is split by concern**, not by screen-per-file convenience — each file below owns
 one piece of the visual/interaction surface: `MainActivity` (entry point) → `GameScreen`
-(Start vs. Game nav + in-game layout) → `StartScreen` (mode/theme/board-size/stats entry
-points) / `GameChrome` (header/sidebar + score chip) / `GameBoardUi` (grid, animated tiles,
-swipe gestures) / `JokerUi` (aiming banner + action bar) / `GameOverlays` (combo popup, streak
-banner, win/game-over overlay), with `ThemePickerDialog`, `BoardSizePickerDialog`,
-`StatsDialog`, `WelcomeDialog` (first-run "How to Play" walkthrough), and `DailyRewardDialog`
-(claimable streak bonus-XP) as the picker/info dialogs opened from `StartScreen`, plus
-`ConfirmNewGameDialog` opened from the in-game New Game button. `ui/theme/` holds the Material3
-theme wiring (colors per palette, typography).
+(Start vs. Game vs. Daily Challenge nav + in-game layout) → `StartScreen` (mode/theme/board-
+size/stats/account entry points) / `GameChrome` (header/sidebar + score chip) / `GameBoardUi`
+(grid, animated tiles, swipe gestures -- its `Board` composable is `internal`, reused as-is by
+`DailyChallengeScreen`) / `JokerUi` (aiming banner + action bar) / `GameOverlays` (combo popup,
+streak banner, win/game-over overlay) / `DailyChallengeScreen` (the daily challenge's own small
+screen -- see "Architecture" above), with `ThemePickerDialog`, `BoardSizePickerDialog`,
+`StatsDialog`, `WelcomeDialog` (first-run "How to Play" walkthrough), `DailyRewardDialog`
+(claimable streak bonus-XP), and `AccountDialog` (sign up/in/out, password reset -- opened from
+the ☁️/🔒 icon) as the picker/info dialogs opened from `StartScreen`, plus `ConfirmNewGameDialog`
+opened from the in-game New Game button. `ui/theme/` holds the Material3 theme wiring (colors
+per palette, typography).
 
 **Streaks and Levels are directly connected**: `StreakTracker.dailyBonusXp(streakDay)` (pure,
 capped at 10 days' worth) is added straight to cumulative score via
