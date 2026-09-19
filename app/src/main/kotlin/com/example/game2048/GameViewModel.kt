@@ -326,10 +326,21 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    /** The board size a New Game would actually use right now -- accounts for whether
+     *  [selectedBoardSize] (the preference) is unlocked yet at the player's level, falling back
+     *  to [BoardSizeOption.DEFAULT] exactly like [onNewGame] does. Exposed so [Game2048App]'s
+     *  onPlay can tell whether the size preference would actually produce a different board than
+     *  the one already in progress -- same reasoning as the `selectedGameMode` vs. `gameMode`
+     *  check it already does. */
+    fun resolvedBoardSize(): Int {
+        val level = _uiState.value.level
+        return if (BoardSizeUnlocks.isUnlocked(selectedBoardSize, level)) selectedBoardSize.size else BoardSizeOption.DEFAULT.size
+    }
+
     fun onNewGame() {
         val current = _uiState.value
         val level = current.level
-        val boardSize = if (BoardSizeUnlocks.isUnlocked(selectedBoardSize, level)) selectedBoardSize.size else BoardSizeOption.DEFAULT.size
+        val boardSize = resolvedBoardSize()
         AppAnalytics.logGameStarted()
         gamesPlayed += 1
         // Locks this fresh board to whatever mode is currently selected -- see KEY_ACTIVE_GAME_MODE.

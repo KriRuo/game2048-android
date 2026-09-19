@@ -18,6 +18,12 @@ same change that triggers the next `release-build.yml` run, moving `Unreleased` 
 
 ## Unreleased
 
+- Fix Play not starting a fresh board when only the board-size preference changed (e.g. picking
+  8x8 after finishing/leaving a 4x4 game resumed the old 4x4 board instead of starting a new
+  8x8 one, until the in-game New Game button was tapped separately). `Game2048App`'s onPlay now
+  compares the resolved size preference (`GameViewModel.resolvedBoardSize()`, accounting for
+  unlock level the same way `onNewGame` does) against the in-progress board's actual size, the
+  same way it already does for a mismatched game mode.
 - Add a Daily Challenge: a fixed-seed, move-capped (30 moves) board that's identical for every
   player on a given calendar day, one attempt per day, no Undo/Jokers regardless of the player's
   own mode, +50 XP for completing it. Reachable from a new card on the Start Screen

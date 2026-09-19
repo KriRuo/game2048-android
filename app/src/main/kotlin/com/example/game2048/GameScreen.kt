@@ -59,14 +59,20 @@ fun Game2048App(viewModel: GameViewModel = viewModel()) {
             onDismissAuthError = viewModel::onDismissAuthError,
             onOpenDailyChallenge = { screen = AppScreen.DAILY_CHALLENGE },
             onPlay = {
-                // A game-over board can't be "resumed" -- start fresh in whichever mode was
+                // A game-over board can't be "resumed" -- start fresh in whichever mode/size was
                 // just picked. Same if the picked mode doesn't match the mode the in-progress
                 // board actually started under (e.g. played a bit under Original, went Home,
                 // picked Extended): resuming that exact board would retroactively hand it Jokers
                 // it was never started with, so it starts fresh instead -- see
-                // GameUiState.selectedGameMode. Neither check fires if the board is untouched
-                // and already matches, so Play still just resumes as-is in the common case.
-                if (uiState.game.isGameOver || uiState.selectedGameMode != uiState.gameMode) {
+                // GameUiState.selectedGameMode. Same reasoning for board size: picking 8x8 after
+                // playing a 4x4 board should start a fresh 8x8 board immediately, not silently
+                // resume the old 4x4 one until the in-game New Game button is tapped separately.
+                // None of these checks fire if the board is untouched and already matches, so
+                // Play still just resumes as-is in the common case.
+                if (uiState.game.isGameOver ||
+                    uiState.selectedGameMode != uiState.gameMode ||
+                    viewModel.resolvedBoardSize() != uiState.game.boardSize
+                ) {
                     viewModel.onNewGame()
                 }
                 screen = AppScreen.GAME
