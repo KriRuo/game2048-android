@@ -77,6 +77,24 @@ can't do here" under CI/CD) -- what's left is genuinely human-only, roughly in p
    `release-build.yml`/`build-test-apk.yml` itself instead of you clicking "Run workflow"
    manually in the Actions tab. Purely a convenience item, not a blocker for anything above.
 
+### Proposed feature (not started): Push notifications
+
+Re-engagement nudges via Firebase Cloud Messaging — not scoped or built yet, just captured here
+so a future session (or KriRuo) has a starting point instead of re-deriving it. Candidate
+triggers: "your streak resets at midnight" (purely local — no server needed, just a scheduled
+local notification via `WorkManager`/`AlarmManager` computed from `StreakTracker`'s existing
+local-calendar-day logic), "you haven't played in N days" (needs a source of truth for *last
+played*, which isn't tracked server-side today — `CloudProgress` would need a
+`lastPlayedAt` field, or this stays local-only per-device like the streak reminder), and "a new
+Daily Challenge is up" (same local-only option, since the challenge's own seed is already
+locally derivable from the date — no server round-trip needed to know today's challenge exists).
+None of these strictly require Firebase Cloud Messaging or a server component; the local-only
+versions are the cheaper starting point and fit the "always fully playable signed-out" design
+principle better than a push-from-server approach would. If cross-device or truly
+server-triggered notifications are wanted later, that needs a Cloud Function (or Firebase's own
+Cloud Messaging campaign scheduling) plus the Android `POST_NOTIFICATIONS` runtime permission
+(API 33+) and a `firebase-messaging` dependency, none of which exist in this repo yet.
+
 **Recipe for sending a test APK**: check for a pre-existing SDK at `/home/user/android-sdk`
 first (present in at least one recent sandbox) before installing a fresh one -- if it's missing,
 install via `sdkmanager` (cmdline-tools, `platform-tools`, `platforms;android-35`,
