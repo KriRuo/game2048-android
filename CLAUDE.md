@@ -52,6 +52,31 @@ merged and verified. Since PR #2 merged, the following has landed directly on `m
 - `CHANGELOG.md` now exists, keyed by `versionCode` (see its own header for why) -- add an entry
   there for any user-facing or architecturally-notable change, the same turn you make it.
 
+### Pending action items for KriRuo
+
+Everything automatable in the DevOps setup is done (see "What a Claude Code session can and
+can't do here" under CI/CD) -- what's left is genuinely human-only, roughly in priority order:
+
+1. **Verify the 4 release-signing secrets exist**: `RELEASE_KEYSTORE_BASE64`,
+   `RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD` under Settings →
+   Secrets and variables → Actions -- `release-build.yml` needs them and was confirmed working
+   end-to-end earlier, but worth a quick check if it ever goes red.
+2. **Generate and add `FIREBASE_TOKEN`**: `firebase login:ci` (as
+   `kristoffer.ruohonen@gmail.com`), add the token as a repo secret. Turns on
+   `firebase-deploy.yml` -- auto-deploys `firestore.rules`/Auth config on a `master` push that
+   touches them, instead of needing a session to do it ad hoc.
+3. **Create the Google Play Console account** ($25, identity verification) -- blocks everything
+   below. See "Play Store rollout" for the full store-listing checklist (privacy policy,
+   screenshots, content rating, data safety form) once the account exists.
+4. **Generate and add `PLAY_SERVICE_ACCOUNT_JSON`** once an app listing exists in Play Console
+   (Setup → API access → create a service account with publish rights → download its JSON key).
+   Turns on the dormant upload step in `release-build.yml` (internal testing track) with no
+   further code changes.
+5. **Grant the Claude GitHub App `Actions: write` permission** (Settings → Integrations →
+   Applications → the app's Actions permission), if you want a session to be able to trigger
+   `release-build.yml`/`build-test-apk.yml` itself instead of you clicking "Run workflow"
+   manually in the Actions tab. Purely a convenience item, not a blocker for anything above.
+
 **Recipe for sending a test APK**: check for a pre-existing SDK at `/home/user/android-sdk`
 first (present in at least one recent sandbox) before installing a fresh one -- if it's missing,
 install via `sdkmanager` (cmdline-tools, `platform-tools`, `platforms;android-35`,
