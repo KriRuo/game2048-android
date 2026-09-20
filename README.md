@@ -98,9 +98,10 @@ security rules if you're standing up your own Firebase project for this repo.
   animate individual tiles rather than snapping a raw value grid into place. Progression logic
   (`LevelTracker`, `StreakTracker`, `ThemeUnlocks`, `BoardSizeOption`) is similarly pure and
   independently unit tested.
-- 83 JUnit tests across 7 files under `app/src/test/kotlin/.../logic/` cover the engine
-  (including Jokers and board-size variants), level curve, streak transitions, daily-challenge
-  seeding/completion, theme/board-size unlock rules, and save-state (de)serialization.
+- 91 JUnit tests: 83 pure `logic/` tests (engine, including Jokers and board-size variants,
+  level curve, streak transitions, daily-challenge seeding/completion, theme/board-size unlock
+  rules, save-state (de)serialization) plus a `GameViewModelTest` running the ViewModel itself
+  via Robolectric — no device/emulator needed, so all 91 run in CI.
 - Play Store upload-ready: real `applicationId` (`com.kriruo.game2048`), an optional release
   signing config read from a gitignored `keystore.properties`, and R8 minification/resource
   shrinking enabled for release builds.
@@ -142,6 +143,7 @@ app/
     ui/theme/                                                     - Compose Material3 theme: per-palette colors & typography
   src/test/kotlin/.../logic/                                      - 83 JUnit tests across 7 files (engine, level, streak, daily
                                                                      challenge, unlocks, serialization)
+  src/test/kotlin/.../GameViewModelTest.kt                        - 8 more, running GameViewModel itself via Robolectric
 ```
 
 ## Opening the project

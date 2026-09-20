@@ -18,6 +18,13 @@ same change that triggers the next `release-build.yml` run, moving `Unreleased` 
 
 ## Unreleased
 
+- Add `GameViewModelTest` (Robolectric — runs `AndroidViewModel` as a plain JVM unit test, no
+  device/emulator needed, so it runs in `ci.yml` alongside everything else). 8 new tests, 83 -> 91
+  total. Specifically covers the two real bugs found and fixed this session that the pure
+  `logic/` package's tests structurally couldn't catch, since both were `GameViewModel` wiring
+  bugs, not engine bugs: selecting a mode or board-size preference must never retroactively
+  change a board already in progress, only the *next* New Game. Requires
+  `testOptions.unitTests.isIncludeAndroidResources = true` in `app/build.gradle.kts`.
 - Fix two legibility issues in the redesigned Start Screen (below): the board-size utility icon
   (e.g. "6×6") had no explicit text color, so it fell back to black-on-dark-background and was
   nearly unreadable — emoji icons in the same row were unaffected since a glyph carries its own

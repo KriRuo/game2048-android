@@ -102,6 +102,15 @@ android {
         buildConfig = true
     }
 
+    // Robolectric (see the testImplementation below) needs the merged manifest/resources
+    // available to unit tests -- without this it can't resolve the app's package/resources and
+    // fails constructing a real Application/Context.
+    testOptions {
+        unitTests {
+            isIncludeAndroidResources = true
+        }
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -147,6 +156,11 @@ dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 
     testImplementation("junit:junit:4.13.2")
+    // Lets GameViewModel (an AndroidViewModel needing a real Application/SharedPreferences) run
+    // as a plain JVM unit test instead of needing a device/emulator -- see GameViewModelTest.
+    // Pinned to a version with confirmed API 34 support; tests target that via @Config(sdk = [34])
+    // rather than compileSdk's 35, sidestepping any framework-jar lag for a brand-new API level.
+    testImplementation("org.robolectric:robolectric:4.13")
 
     androidTestImplementation(platform("androidx.compose:compose-bom:2024.09.03"))
     androidTestImplementation("androidx.test.ext:junit:1.2.1")

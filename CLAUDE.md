@@ -9,7 +9,7 @@ Native Android 2048 in Kotlin + Jetpack Compose (Material 3), `applicationId`
 
 ## Current status — where to pick up
 
-`master` is in a good, verified state: CI (`test` + `build`) green, all 83 JUnit tests pass,
+`master` is in a good, verified state: CI (`test` + `build`) green, all 91 JUnit tests pass,
 working tree clean. One thing is still outstanding:
 
 - **PR #1** (`claude/chat-session-m8ggzs`) is still open and needs attention before it's
@@ -66,7 +66,8 @@ project `game2048-47897` (see "Firebase backend" below).
 ## Commands
 
 ```
-./gradlew test                 # run all 83 JUnit tests (logic package only, no Android deps)
+./gradlew test                 # run all 91 JUnit tests (83 pure logic/ tests + GameViewModelTest,
+                                # which uses Robolectric -- see "Architecture" -- no device/emulator needed)
 ./gradlew test --tests "com.example.game2048.logic.Game2048EngineTest"   # single test class
 ./gradlew assembleDebug        # debug APK
 ./gradlew assembleRelease      # release APK (unsigned unless keystore.properties is present)
@@ -156,7 +157,7 @@ Two workflows under `.github/workflows/`:
 
 - **`ci.yml`** — runs on every push to `master` and every pull request targeting `master`.
   Two independent jobs, each its own status check on the PR: `test` (`./gradlew test`, the
-  83 JUnit tests, with the HTML report uploaded as a workflow artifact) and `build`
+  91 JUnit tests, with the HTML report uploaded as a workflow artifact) and `build`
   (`./gradlew assembleDebug`, a compile-only sanity check). A red check here is what used to
   require asking Claude to run tests/build manually — it's now automatic and visible directly
   on the PR/commit.
@@ -242,6 +243,17 @@ forwards swipes and Joker taps to `Game2048Engine`, and persists best score, in-
 board, streak, and level to `SharedPreferences` (`GameStateSerializer.kt` handles the
 `GameState` (de)serialization). There is no repository/DB layer — SharedPreferences is the
 only persistence.
+
+**`GameViewModel` is covered by `GameViewModelTest`** via Robolectric (`testImplementation
+"org.robolectric:robolectric:4.13"`, `@RunWith(RobolectricTestRunner::class)`, `@Config(sdk =
+[34])`), which runs an `AndroidViewModel` as a plain JVM unit test -- `RuntimeEnvironment
+.getApplication()` gives a real (test) `Application`/`SharedPreferences` with no device/emulator
+needed, so it runs in `ci.yml` like everything else. This is the pattern to extend for any
+future `GameViewModel`-level behavior that the pure `logic/` package's tests can't reach --
+notably, it's what would have caught the mode/board-size "Play resumes the wrong board" bugs
+fixed this session, since those were `GameViewModel`/`Game2048App` wiring bugs, not engine bugs.
+`isIncludeAndroidResources = true` under `android.testOptions.unitTests` is required for
+Robolectric to resolve the merged manifest/resources.
 
 **Analytics event catalog** (`AppAnalytics.kt`, all no-ops without `google-services.json`):
 `game_started`, `level_up`, `streak_milestone`, `theme_unlocked`/`pattern_unlocked`/
