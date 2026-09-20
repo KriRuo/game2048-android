@@ -24,7 +24,7 @@ jobs:
     env:
       HAS_FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         if: env.HAS_FIREBASE_TOKEN == 'true'
 
       - name: Deploy Firestore rules and Auth config
