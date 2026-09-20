@@ -26,7 +26,7 @@ internal fun DailyRewardDialog(streakDay: Int, rewardXp: Int, onClaim: () -> Uni
 /** Scales with [streakDay] the same way [StreakTracker.dailyBonusXp]'s reward amount does, so
  *  the copy's energy tracks the actual milestone rather than saying the same thing on day 1
  *  and day 30. Day 1 gets its own line since "back already" doesn't make sense on a first
- *  visit -- see [streakGreeting] in [StartScreen] for the equivalent on the Start Screen itself. */
+ *  visit -- [StartScreen] shows a plain "N day streak" instead, without this escalating tone. */
 private fun dailyRewardMessage(streakDay: Int, rewardXp: Int): String = when {
     streakDay <= 1 -> "Nice start. Take $rewardXp XP to kick things off."
     streakDay < 7 -> "Back already? Look at you. Take $rewardXp XP."

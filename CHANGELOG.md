@@ -18,6 +18,15 @@ same change that triggers the next `release-build.yml` run, moving `Unreleased` 
 
 ## Unreleased
 
+- Redesign the Start Screen's information hierarchy so Play is the obvious first tap instead of
+  competing with five other elements at similar visual weight: a large filled `PlayCard`
+  (replacing the outlined Play button plus the two full-size Original/Extended mode cards)
+  shows the active mode/board size as a small "Extended · 4×4 ˅" control that opens a new compact
+  `GameModePickerDialog`; the verbose streak line ("Day 3 — back already? Look at you.") is now a
+  small "🔥 3 day streak" near the bottom; Daily Challenge and the theme/board-size/stats/help/
+  account utility icons are unchanged functionally but visually de-emphasized (a slimmer row,
+  smaller icons). No state, navigation, or persistence logic changed — `selectedGameMode`,
+  `selectedBoardSize`, and every existing callback are reused as-is.
 - Fix Play not starting a fresh board when only the board-size preference changed (e.g. picking
   8x8 after finishing/leaving a 4x4 game resumed the old 4x4 board instead of starting a new
   8x8 one, until the in-game New Game button was tapped separately). `Game2048App`'s onPlay now

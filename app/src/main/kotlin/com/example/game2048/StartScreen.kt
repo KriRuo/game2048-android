@@ -7,14 +7,12 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -27,11 +25,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -84,6 +82,7 @@ internal fun StartScreen(
     var showBoardSizePicker by remember { mutableStateOf(false) }
     var showStats by remember { mutableStateOf(false) }
     var showAccount by remember { mutableStateOf(false) }
+    var showModePicker by remember { mutableStateOf(false) }
     // Evaluated once, the first time this composable enters composition (i.e. once per real
     // app launch, or whenever the player navigates back here from a game -- see
     // GameUiState.hasSeenWelcome for why that's safe): auto-open the walkthrough exactly once
@@ -141,21 +140,13 @@ internal fun StartScreen(
                     onSecretTap = onDebugResetWelcome
                 )
             }
-            if (uiState.currentStreak >= 1) {
-                Text(
-                    text = streakGreeting(uiState.currentStreak, uiState.longestStreak),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
-                    modifier = Modifier.padding(top = 6.dp)
-                )
-            }
             // Makes the LEVEL chip's number concrete: exactly how much of the current level's
             // XP span is earned, and how much more the next level needs -- not just a bar.
             val xp = LevelTracker.xpProgress(uiState.cumulativeScore)
             LinearProgressIndicator(
                 progress = { uiState.levelProgress },
                 modifier = Modifier
-                    .padding(top = 10.dp)
+                    .padding(top = 8.dp)
                     .width(140.dp)
                     .height(5.dp)
                     .clip(RoundedCornerShape(2.dp)),
@@ -169,36 +160,15 @@ internal fun StartScreen(
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
                 modifier = Modifier.padding(top = 3.dp)
             )
-            Row(
-                modifier = Modifier.padding(top = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                StartScreenIconButton(
-                    label = "🎨",
-                    contentDescription = "Theme",
-                    onClick = { showThemePicker = true }
-                )
-                StartScreenIconButton(
-                    label = "${uiState.selectedBoardSize.size}×${uiState.selectedBoardSize.size}",
-                    contentDescription = "Board size",
-                    onClick = { showBoardSizePicker = true }
-                )
-                StartScreenIconButton(
-                    label = "📊",
-                    contentDescription = "Stats",
-                    onClick = { showStats = true }
-                )
-                StartScreenIconButton(
-                    label = "❓",
-                    contentDescription = "How to Play",
-                    onClick = { showWelcome = true }
-                )
-                StartScreenIconButton(
-                    label = if (uiState.signedInUserId != null) "☁️" else "🔒",
-                    contentDescription = if (uiState.signedInUserId != null) "Cloud sync on" else "Sign in",
-                    onClick = { showAccount = true }
-                )
-            }
+            Spacer(modifier = Modifier.height(20.dp))
+            OrbitVariantWeb(diameter = orbitDiameter)
+            Spacer(modifier = Modifier.height(16.dp))
+            PlayCard(
+                selectedGameMode = uiState.selectedGameMode,
+                selectedBoardSize = uiState.selectedBoardSize,
+                onPlay = onPlay,
+                onOpenModePicker = { showModePicker = true }
+            )
             DailyChallengeCard(
                 completedToday = uiState.dailyChallengeCompletedToday,
                 lastScore = uiState.dailyChallengeLastScore,
@@ -206,45 +176,33 @@ internal fun StartScreen(
                 onClick = onOpenDailyChallenge,
                 modifier = Modifier.padding(top = 14.dp)
             )
-            Text(
-                text = "CHOOSE HOW YOU WANT TO PLAY",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp,
-                color = accent,
-                modifier = Modifier.padding(top = 18.dp)
+            Spacer(modifier = Modifier.height(18.dp))
+            UtilityRow(
+                selectedBoardSize = uiState.selectedBoardSize,
+                signedIn = uiState.signedInUserId != null,
+                onTheme = { showThemePicker = true },
+                onBoardSize = { showBoardSizePicker = true },
+                onStats = { showStats = true },
+                onHelp = { showWelcome = true },
+                onAccount = { showAccount = true }
             )
-            Spacer(modifier = Modifier.height(10.dp))
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                GameMode.entries.forEach { mode ->
-                    StartModeCard(
-                        mode = mode,
-                        selected = mode == uiState.selectedGameMode,
-                        onClick = { onSelectGameMode(mode) }
-                    )
-                }
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-            OrbitVariantWeb(diameter = orbitDiameter)
-            Spacer(modifier = Modifier.height(12.dp))
-            OutlinedButton(
-                onClick = onPlay,
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = accent),
-                modifier = Modifier.fillMaxWidth()
-            ) {
+            if (uiState.currentStreak >= 1) {
                 Text(
-                    text = "Play",
-                    color = accent,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    modifier = Modifier.padding(vertical = 6.dp)
+                    text = "🔥 ${uiState.currentStreak} day streak",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+                    modifier = Modifier.padding(top = 10.dp)
                 )
             }
         }
+    }
+
+    if (showModePicker) {
+        GameModePickerDialog(
+            selectedGameMode = uiState.selectedGameMode,
+            onSelect = onSelectGameMode,
+            onDismiss = { showModePicker = false }
+        )
     }
 
     if (showThemePicker) {
@@ -309,18 +267,147 @@ internal fun StartScreen(
     }
 }
 
-/** One of the three customize entry points on [StartScreen] (theme / board size / stats) --
- *  a small outlined icon button, matching the style [Header]/[Sidebar] used for their icon-only
- *  actions. [label] is either a single emoji or, for the board-size button, the currently
- *  selected size (e.g. "8×8") so the active choice is visible without opening the picker. */
+/** The dominant call-to-action on [StartScreen] -- a large filled card (not the old outlined
+ *  button) so Play reads as the obvious first tap, with the active [selectedGameMode]/
+ *  [selectedBoardSize] shown as a small secondary control underneath rather than as the two
+ *  large Original/Extended cards this replaced. Tapping that control (not the card body) opens
+ *  [GameModePickerDialog] -- board size still has its own picker via the utility row below. */
 @Composable
-private fun StartScreenIconButton(label: String, contentDescription: String, onClick: () -> Unit) {
-    OutlinedButton(
-        onClick = onClick,
-        shape = RoundedCornerShape(10.dp),
-        colors = ButtonDefaults.outlinedButtonColors(contentColor = LocalPaletteColors.current.accent),
-        contentPadding = PaddingValues(12.dp),
-        modifier = Modifier.semantics { this.contentDescription = contentDescription }
+private fun PlayCard(
+    selectedGameMode: GameMode,
+    selectedBoardSize: BoardSizeOption,
+    onPlay: () -> Unit,
+    onOpenModePicker: () -> Unit
+) {
+    val accent = LocalPaletteColors.current.accent
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(20.dp))
+            .background(accent)
+            .clickable(onClick = onPlay)
+            .padding(vertical = 22.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "PLAY",
+            color = MaterialTheme.colorScheme.background,
+            fontWeight = FontWeight.Black,
+            fontSize = 26.sp,
+            letterSpacing = 1.sp
+        )
+        Text(
+            text = "${selectedGameMode.displayName} · ${selectedBoardSize.size}×${selectedBoardSize.size} ˅",
+            color = MaterialTheme.colorScheme.background.copy(alpha = 0.75f),
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 13.sp,
+            modifier = Modifier
+                .padding(top = 6.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(onClick = onOpenModePicker)
+                .padding(horizontal = 8.dp, vertical = 2.dp)
+                .semantics { contentDescription = "Change game mode" }
+        )
+    }
+}
+
+/** Compact bottom sheet listing [GameMode.entries] -- what replaced the two large Original/
+ *  Extended cards previously shown directly on [StartScreen] (see [PlayCard]). Same
+ *  [onSelect]/[GameViewModel.onSelectGameMode] wiring as before; this is only a presentation
+ *  change. */
+@Composable
+private fun GameModePickerDialog(
+    selectedGameMode: GameMode,
+    onSelect: (GameMode) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val palette = LocalPaletteColors.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("Close") }
+        },
+        title = { Text("Game Mode") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                GameMode.entries.forEach { mode ->
+                    val selected = mode == selectedGameMode
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (selected) palette.accent.copy(alpha = 0.15f) else palette.surfaceChip)
+                            .clickable { onSelect(mode) }
+                            .padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = if (selected) "●" else "○",
+                            color = palette.accent,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Column {
+                            Text(
+                                text = mode.displayName,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
+                            Text(
+                                text = modeDescription(mode),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    )
+}
+
+/** The five customize/utility entry points (theme, board size, stats, help, account) as a
+ *  compact icon row -- deliberately small and borderless so they read as secondary to
+ *  [PlayCard], not competing with it the way the old outlined icon-button row did. */
+@Composable
+private fun UtilityRow(
+    selectedBoardSize: BoardSizeOption,
+    signedIn: Boolean,
+    onTheme: () -> Unit,
+    onBoardSize: () -> Unit,
+    onStats: () -> Unit,
+    onHelp: () -> Unit,
+    onAccount: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceEvenly
+    ) {
+        UtilityIcon(label = "🎨", description = "Theme", onClick = onTheme)
+        UtilityIcon(
+            label = "${selectedBoardSize.size}×${selectedBoardSize.size}",
+            description = "Board size",
+            onClick = onBoardSize
+        )
+        UtilityIcon(label = "📊", description = "Stats", onClick = onStats)
+        UtilityIcon(label = "❓", description = "How to Play", onClick = onHelp)
+        UtilityIcon(
+            label = if (signedIn) "☁️" else "🔒",
+            description = if (signedIn) "Cloud sync on" else "Sign in",
+            onClick = onAccount
+        )
+    }
+}
+
+@Composable
+private fun UtilityIcon(label: String, description: String, onClick: () -> Unit) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp, vertical = 4.dp)
+            .semantics { contentDescription = description }
     ) {
         Text(label, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1)
     }
@@ -474,64 +561,8 @@ private fun OrbitVariantWeb(modifier: Modifier = Modifier, diameter: Dp = 220.dp
 }
 
 
-/** One selectable mode option on [StartScreen]. */
-@Composable
-private fun StartModeCard(mode: GameMode, selected: Boolean, onClick: () -> Unit) {
-    val palette = LocalPaletteColors.current
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(if (selected) palette.accent.copy(alpha = 0.15f) else palette.surfaceChip)
-            .then(
-                if (selected) {
-                    Modifier.border(2.dp, palette.accent, RoundedCornerShape(14.dp))
-                } else {
-                    Modifier
-                }
-            )
-            .clickable(onClick = onClick)
-            .padding(16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                text = mode.displayName,
-                fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Text(
-                text = modeDescription(mode),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
-                modifier = Modifier.padding(top = 2.dp)
-            )
-        }
-        if (selected) {
-            Text(text = "✓", color = palette.accent, fontWeight = FontWeight.Bold, fontSize = 20.sp)
-        }
-    }
-}
-
-/** One-line description of a [GameMode], shown on [StartModeCard] -- the only place mode is
- *  chosen now (see [StartScreen]). */
+/** One-line description of a [GameMode], shown on [GameModePickerDialog]. */
 private fun modeDescription(mode: GameMode): String = when (mode) {
     GameMode.ORIGINAL -> "Classic rules: swipe to move, no Undo, no Jokers."
     GameMode.EXTENDED -> "Adds Undo plus the Teleport, Swap, Rotate, Double, and Bomb Jokers."
-}
-
-/** The streak badge's text, scaled by [currentStreak] the same way [DailyRewardDialog]'s copy
- *  is -- both trace back to [StreakTracker.dailyBonusXp]'s tiers, so the tone escalates in step
- *  with the actual reward rather than the two places drifting apart. [longestStreak] alone
- *  tells "day 1" apart from a *restart* after a broken streak (current reset to 1 but longest
- *  is still > 1) without needing any extra persisted state -- see
- *  [GameViewModel.buildInitialState]'s streak handling for why that distinction is free here. */
-private fun streakGreeting(currentStreak: Int, longestStreak: Int): String = when {
-    currentStreak <= 1 && longestStreak > 1 -> "🔥 Day 1 — new streak, let's go."
-    currentStreak <= 1 -> "🔥 Day 1 streak"
-    currentStreak < 7 -> "🔥 Day $currentStreak — back already? Look at you."
-    currentStreak < 30 -> "🔥 Day $currentStreak — you're not stopping, huh?"
-    else -> "🔥 Day $currentStreak — absolutely unstoppable."
 }
