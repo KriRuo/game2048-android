@@ -298,14 +298,15 @@ private fun PlayCard(
         )
         Text(
             text = "${selectedGameMode.displayName} · ${selectedBoardSize.size}×${selectedBoardSize.size} ˅",
-            color = MaterialTheme.colorScheme.background.copy(alpha = 0.75f),
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 13.sp,
+            color = MaterialTheme.colorScheme.background,
+            fontWeight = FontWeight.Bold,
+            fontSize = 16.sp,
             modifier = Modifier
-                .padding(top = 6.dp)
+                .padding(top = 8.dp)
                 .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.background.copy(alpha = 0.12f))
                 .clickable(onClick = onOpenModePicker)
-                .padding(horizontal = 8.dp, vertical = 2.dp)
+                .padding(horizontal = 12.dp, vertical = 6.dp)
                 .semantics { contentDescription = "Change game mode" }
         )
     }
@@ -409,7 +410,17 @@ private fun UtilityIcon(label: String, description: String, onClick: () -> Unit)
             .padding(horizontal = 10.dp, vertical = 4.dp)
             .semantics { contentDescription = description }
     ) {
-        Text(label, fontSize = 15.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+        // Explicit color, not just the emoji-icon labels' default rendering: an emoji glyph
+        // (🎨/📊/❓/🔒/☁️) carries its own color regardless of what's set here, but the one
+        // text label (the board-size ratio, e.g. "6×6") doesn't -- left unset, it fell back to
+        // black-on-dark-background and was unreadable in dark mode.
+        Text(
+            label,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            color = LocalPaletteColors.current.accent
+        )
     }
 }
 

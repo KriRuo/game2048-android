@@ -18,6 +18,12 @@ same change that triggers the next `release-build.yml` run, moving `Unreleased` 
 
 ## Unreleased
 
+- Fix two legibility issues in the redesigned Start Screen (below): the board-size utility icon
+  (e.g. "6×6") had no explicit text color, so it fell back to black-on-dark-background and was
+  nearly unreadable — emoji icons in the same row were unaffected since a glyph carries its own
+  color regardless. The `PlayCard`'s mode/size line ("Extended · 4×4 ˅") was also small (13sp,
+  75% opacity) for a tappable control — bumped to 16sp/full opacity with a subtle pill background
+  and larger touch padding.
 - Redesign the Start Screen's information hierarchy so Play is the obvious first tap instead of
   competing with five other elements at similar visual weight: a large filled `PlayCard`
   (replacing the outlined Play button plus the two full-size Original/Extended mode cards)
