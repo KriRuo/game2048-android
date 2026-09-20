@@ -222,6 +222,41 @@ passes `github.run_number` for that property — so every bundle built by that w
 strictly increasing versionCode automatically. `versionName` is still the static `"1.0"`;
 bump it by hand in `app/build.gradle.kts` when you actually want the version string to move.
 
+### What a Claude Code session can and can't do here
+
+The goal is minimal human touch -- read this before assuming something needs KriRuo, or
+silently working around a limitation a future session will just hit again.
+
+- **Can't dispatch a `workflow_dispatch` workflow** (`build-test-apk.yml` with a ref,
+  `release-build.yml`) via the GitHub MCP tools -- `actions_run_trigger`'s `run_workflow` 403s
+  with "Resource not accessible by integration." Confirmed by actually trying it (2026-09-20),
+  not assumed. This is a permission on the Claude GitHub App installation for this repo
+  (Settings → Integrations → Applications → the app's Actions permission), not something a
+  session can grant itself. Until that's raised, triggering either workflow needs KriRuo to
+  click "Run workflow" in the Actions tab -- everything *after* that (reading run status,
+  downloading artifacts, checking logs) a session can do unaided via the `mcp__github__actions_*`
+  tools and the `GH_TOKEN`/`GITHUB_TOKEN` already exported in the shell environment (confirmed
+  working: used to poll a run to completion via `curl` without needing `gh`, which isn't
+  installed here).
+- **Can** deploy Firebase config (`firebase deploy --only firestore`/`--only auth`) directly via
+  the `mcp__plugin_firebase_firebase__firebase_deploy` tool once `firebase_update_environment`
+  points at the right project/account -- see "Firebase backend" above. Nothing about this needs
+  KriRuo today, but it's also not automated in CI (no workflow deploys `firestore.rules`
+  automatically on a change to `master`) -- a session doing this today does it ad hoc, on
+  request, which works but is easy to forget. Worth a `firebase-deploy.yml` triggered on changes
+  to `firestore.rules`/`firebase.json`, using a Firebase CI token or service-account key as a
+  GitHub secret, if this comes up again.
+- **Genuinely needs KriRuo, not just "hasn't been automated yet"**: the Play Console account
+  itself ($25, identity verification), the first manual `.aab` upload to it (Google's own
+  requirement, not a tooling gap), any billing-plan decision (see the Blaze-vs-Spark discussion
+  in git history), and any GitHub App/org permission change like the one above.
+- **Not yet automated, and genuinely could be** (beyond the Play Developer API upload already
+  called out above): Gradle dependency updates (no Dependabot/Renovate config exists --
+  version bumps like the Firebase BoM pin only happen if someone notices), a code-quality gate
+  in `ci.yml` (Android Lint/ktlint/detekt -- today only tests + a compile check run, so a
+  non-crashing issue passes through silently), and cleanup of `build-test-apk.yml`'s ad-hoc
+  `test-<ref>-<run#>` GitHub Releases (no expiry, accumulate indefinitely).
+
 ## Architecture
 
 **Engine/UI split is the core design decision.** `logic/GameLogic.kt` (`Game2048Engine`) is a
