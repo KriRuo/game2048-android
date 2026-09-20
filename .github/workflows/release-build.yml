@@ -11,6 +11,13 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # See "Play Store rollout" in CLAUDE.md -- the first .aab upload to Play Console has to be
+      # manual (a Google requirement, not a tooling gap), and there's no app in Play Console yet
+      # for a service account to target. Until PLAY_SERVICE_ACCOUNT_JSON exists as a repo secret,
+      # this whole env evaluates false and the upload step below is a clean no-op -- checked via
+      # this env var rather than the secret directly in `if:`, which is more reliable in Actions.
+      HAS_PLAY_CREDENTIALS: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -48,3 +55,16 @@ jobs:
         with:
           name: app-release-bundle
           path: app/build/outputs/bundle/release/app-release.aab
+
+      # Dormant until PLAY_SERVICE_ACCOUNT_JSON exists (see the env block above) -- once an app
+      # exists in Play Console and a service-account key is added as that secret, this starts
+      # publishing every signed bundle straight to the internal testing track with no other
+      # change needed here.
+      - name: Upload to Play Store (internal track)
+        if: env.HAS_PLAY_CREDENTIALS == 'true'
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: com.kriruo.game2048
+          releaseFiles: app/build/outputs/bundle/release/app-release.aab
+          track: internal

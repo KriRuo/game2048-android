@@ -18,7 +18,16 @@ same change that triggers the next `release-build.yml` run, moving `Unreleased` 
 
 ## Unreleased
 
-- Add `GameViewModelTest` (Robolectric — runs `AndroidViewModel` as a plain JVM unit test, no
+- DevOps automation pass (no app code changes): add `.github/dependabot.yml` (weekly `gradle` +
+  `github-actions` updates), a `lint` job to `ci.yml` (`./gradlew lintDebug` — starts green,
+  40 pre-existing warnings/2 info, 0 errors), `cleanup-test-releases.yml` (scheduled weekly,
+  prunes old ad-hoc `test-<ref>-<run#>` GitHub Releases from `build-test-apk.yml`, keeping the
+  10 most recent), `firebase-deploy.yml` (auto-deploys `firestore.rules`/Auth config on a
+  `master` push that touches them, once a `FIREBASE_TOKEN` secret is added), and a dormant Play
+  Store upload step in `release-build.yml` (`r0adkll/upload-google-play@v1`, internal track,
+  gated on a `PLAY_SERVICE_ACCOUNT_JSON` secret that doesn't exist yet). See CLAUDE.md's "What
+  a Claude Code session can and can't do here" for which of the two still-missing secrets are
+  genuinely KriRuo-only and why. Add `GameViewModelTest` (Robolectric — runs `AndroidViewModel` as a plain JVM unit test, no
   device/emulator needed, so it runs in `ci.yml` alongside everything else). 8 new tests, 83 -> 91
   total. Specifically covers the two real bugs found and fixed this session that the pure
   `logic/` package's tests structurally couldn't catch, since both were `GameViewModel` wiring

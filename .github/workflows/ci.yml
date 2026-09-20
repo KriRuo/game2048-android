@@ -45,3 +45,31 @@ jobs:
 
       - name: Assemble debug APK
         run: ./gradlew assembleDebug --no-daemon
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      # lintDebug's default abortOnError only fails the build on Error-severity findings, not
+      # Warning/Information ones -- as of 2026-09-20 this repo has 40 warnings + 2 info findings
+      # (GradleDependency, ApplySharedPref, UnusedResources, etc.) and 0 errors, so this gate
+      # starts green. It exists to catch a *new* Error-severity issue (a real correctness/
+      # security lint check), not to enforce zero warnings.
+      - name: Run Android Lint
+        run: ./gradlew lintDebug --no-daemon
+
+      - name: Upload lint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-report
+          path: app/build/reports/lint-results-debug.html

@@ -1,0 +1,37 @@
+name: Deploy Firebase config
+
+# Firestore security rules / auth config are otherwise only ever deployed ad hoc, on request, by
+# a session with Firebase CLI access -- see CLAUDE.md's "What a Claude Code session can and
+# can't do here". This automates that for the common case (a change actually landing on
+# master) so it isn't forgotten. Requires a FIREBASE_TOKEN repo secret (generate with
+# `firebase login:ci` as an account with access to project game2048-47897, then add it under
+# Settings -> Secrets and variables -> Actions) -- this workflow can't create that secret
+# itself, and every job below no-ops with a clear message if it's missing.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "firestore.rules"
+      - "firestore.indexes.json"
+      - "firebase.json"
+      - ".firebaserc"
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      HAS_FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        if: env.HAS_FIREBASE_TOKEN == 'true'
+
+      - name: Deploy Firestore rules and Auth config
+        if: env.HAS_FIREBASE_TOKEN == 'true'
+        run: npx firebase-tools@latest deploy --only firestore,auth --token "${{ secrets.FIREBASE_TOKEN }}" --project game2048-47897
+
+      - name: Skipped -- no FIREBASE_TOKEN secret configured
+        if: env.HAS_FIREBASE_TOKEN != 'true'
+        run: |
+          echo "::warning::FIREBASE_TOKEN is not set, so firestore.rules/firebase.json changes were NOT deployed. Generate one with 'firebase login:ci' and add it under Settings -> Secrets and variables -> Actions."

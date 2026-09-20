@@ -1,0 +1,15 @@
+version: 2
+updates:
+  # Gradle/AGP/Kotlin/Compose/Firebase BoM version bumps -- nothing currently watches these
+  # (no version-bump check anywhere in ci.yml), so they only move if someone notices by hand.
+  - package-ecosystem: "gradle"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  # Actions used across ci.yml / build-test-apk.yml / release-build.yml / firebase-deploy.yml
+  # (actions/checkout, actions/setup-java, softprops/action-gh-release, etc.).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

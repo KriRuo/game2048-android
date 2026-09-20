@@ -1,0 +1,58 @@
+name: Clean up test APK releases
+
+# build-test-apk.yml's workflow_dispatch path creates a new "test-<ref>-<run#>" GitHub Release
+# every time it's manually run, with no expiry -- see CLAUDE.md's DevOps notes. This prunes old
+# ones on a schedule so they don't accumulate indefinitely, using the workflow's own built-in
+# GITHUB_TOKEN (no extra secret needed).
+
+on:
+  schedule:
+    - cron: "0 3 * * 1" # every Monday 03:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete old test-<ref>-<run#> releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          # Never touched: "latest-master" is the one release meant to always exist and stay
+          # current (updated in place by every push to master).
+          KEEP_COUNT=10
+
+          mapfile -t tags < <(
+            curl -sS -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPO/releases?per_page=100" \
+              | jq -r '.[] | select(.tag_name | startswith("test-")) | "\(.created_at)\t\(.tag_name)"' \
+              | sort -r \
+              | cut -f2
+          )
+
+          echo "Found ${#tags[@]} test-* releases."
+
+          if [ "${#tags[@]}" -le "$KEEP_COUNT" ]; then
+            echo "Nothing to clean up (at or under the keep threshold of $KEEP_COUNT)."
+            exit 0
+          fi
+
+          for tag in "${tags[@]:$KEEP_COUNT}"; do
+            echo "Deleting release + tag: $tag"
+            release_id=$(curl -sS -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPO/releases/tags/$tag" | jq -r '.id')
+            curl -sS -X DELETE -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPO/releases/$release_id"
+            curl -sS -X DELETE -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPO/git/refs/tags/$tag" || true
+          done

@@ -153,14 +153,18 @@ catalog.
 
 ## CI/CD
 
-Two workflows under `.github/workflows/`:
+Six workflows under `.github/workflows/`:
 
 - **`ci.yml`** — runs on every push to `master` and every pull request targeting `master`.
-  Two independent jobs, each its own status check on the PR: `test` (`./gradlew test`, the
-  91 JUnit tests, with the HTML report uploaded as a workflow artifact) and `build`
-  (`./gradlew assembleDebug`, a compile-only sanity check). A red check here is what used to
-  require asking Claude to run tests/build manually — it's now automatic and visible directly
-  on the PR/commit.
+  Three independent jobs, each its own status check on the PR: `test` (`./gradlew test`, the
+  91 JUnit tests, with the HTML report uploaded as a workflow artifact), `build`
+  (`./gradlew assembleDebug`, a compile-only sanity check), and `lint` (`./gradlew lintDebug`,
+  HTML report uploaded as an artifact). A red check here is what used to require asking Claude
+  to run tests/build manually — it's now automatic and visible directly on the PR/commit.
+  `lintDebug`'s default `abortOnError` only fails the job on Error-severity findings — as of
+  2026-09-20 this repo sits at 40 Warning + 2 Information findings (mostly `GradleDependency`,
+  `ApplySharedPref`, `UnusedResources`) and 0 errors, so the gate starts green; it exists to
+  catch a *new* Error-severity issue, not to enforce zero warnings.
 
 - **`build-test-apk.yml`** — publishes a debug APK as a **GitHub Release** so invited
   collaborators can install a test build on a phone without a local Android toolchain:
@@ -171,6 +175,18 @@ Two workflows under `.github/workflows/`:
     branch/PR ref): builds that ref and publishes a separate release tagged
     `test-<ref>-<run#>`, so ad-hoc test builds don't clobber `latest-master`.
   - Both releases are marked as debug/unsigned builds not meant for wider distribution.
+
+- **`cleanup-test-releases.yml`** — scheduled (weekly, Mondays 03:00 UTC) plus manually
+  dispatchable, prunes old ad-hoc `test-<ref>-<run#>` GitHub Releases created by
+  `build-test-apk.yml`'s manual-trigger path, keeping the 10 most recent and never touching
+  `latest-master`. Uses the workflow's own built-in `GITHUB_TOKEN` — no secret to configure.
+
+- **`firebase-deploy.yml`** — runs on push to `master` when `firestore.rules`,
+  `firestore.indexes.json`, `firebase.json`, or `.firebaserc` change (plus manual dispatch),
+  and deploys Firestore rules + Auth config via `firebase-tools`. Needs a `FIREBASE_TOKEN`
+  secret (generate with `firebase login:ci`, add under Settings → Secrets and variables →
+  Actions) — until that secret exists the job no-ops with a `::warning::` annotation instead of
+  failing, so this workflow is safe to have merged before the secret is added.
 
 **Branch protection on `master`** (set up manually in Settings → Branches, not via a file in
 this repo): requires the `test` and `build` status checks from `ci.yml` to pass before a PR
@@ -184,9 +200,17 @@ repo's early history) still work.
   `RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD`. The workflow writes
   `app/game2048-release.jks` and a root `keystore.properties` from those secrets, builds, then
   deletes both before the job ends. Output is uploaded as a workflow artifact named
-  `app-release-bundle` (not published anywhere — there's no Play Console listing yet to push
-  to). This is prep for eventual Play Store upload automation (Play Developer API), not that
-  automation itself.
+  `app-release-bundle`, and — new this session — also has a dormant Play Store upload step
+  (`r0adkll/upload-google-play@v1`, targeting the `internal` track) gated on a
+  `PLAY_SERVICE_ACCOUNT_JSON` secret via `env.HAS_PLAY_CREDENTIALS` (checked as an env var
+  rather than the secret directly in `if:`, which is more reliable in Actions). That secret
+  doesn't exist yet — see "Play Store rollout" below — so today this step is a clean no-op and
+  the artifact upload is still the only real output; once the secret is added, no workflow
+  change is needed for uploads to start happening automatically.
+
+- **`dependabot.yml`** — weekly version-bump PRs for the `gradle` (AGP/Kotlin/Compose/Firebase
+  BoM, etc.) and `github-actions` ecosystems. Purely additive — opens PRs against `master`,
+  doesn't merge anything itself; `ci.yml`'s checks still gate them like any other PR.
 
 ### Play Store rollout — where to pick up
 
@@ -212,9 +236,12 @@ left, roughly in order:
    automation can target that app listing) — grab the artifact from a `release-build.yml` run.
 
 **Next technical step once an app exists in Play Console:**
-- Add Play Developer API upload to CI (e.g. `r0adkll/upload-google-play` action) using a
-  service-account JSON key, targeting the **internal testing track** first (no review wait,
-  good for KriRuo's invited testers) before ever touching `production`.
+- ~~Add Play Developer API upload to CI~~ — done: `release-build.yml` already has a
+  `r0adkll/upload-google-play@v1` step targeting the **internal testing track**, gated on a
+  `PLAY_SERVICE_ACCOUNT_JSON` secret that doesn't exist yet (see "CI/CD" above) — so the only
+  remaining step, once an app exists in Play Console, is generating that service-account JSON
+  key in Play Console (Setup → API access) and adding it as that secret. No workflow code
+  change needed at that point.
 
 `versionCode` is already handled: `app/build.gradle.kts` reads it from a `-PversionCode=<n>`
 Gradle property (defaulting to `1` for local/unspecified builds), and `release-build.yml`
@@ -240,22 +267,33 @@ silently working around a limitation a future session will just hit again.
   installed here).
 - **Can** deploy Firebase config (`firebase deploy --only firestore`/`--only auth`) directly via
   the `mcp__plugin_firebase_firebase__firebase_deploy` tool once `firebase_update_environment`
-  points at the right project/account -- see "Firebase backend" above. Nothing about this needs
-  KriRuo today, but it's also not automated in CI (no workflow deploys `firestore.rules`
-  automatically on a change to `master`) -- a session doing this today does it ad hoc, on
-  request, which works but is easy to forget. Worth a `firebase-deploy.yml` triggered on changes
-  to `firestore.rules`/`firebase.json`, using a Firebase CI token or service-account key as a
-  GitHub secret, if this comes up again.
+  points at the right project/account -- see "Firebase backend" above. This is still useful for
+  an immediate, ad-hoc deploy mid-session, but `firebase-deploy.yml` now also auto-deploys on
+  every push to `master` that touches `firestore.rules`/`firestore.indexes.json`/
+  `firebase.json`/`.firebaserc`, once its `FIREBASE_TOKEN` secret exists (see "CI/CD" above) --
+  that token is the one piece KriRuo needs to generate (`firebase login:ci`, logged in as an
+  account with access to project `game2048-47897`) and add under Settings → Secrets and
+  variables → Actions; a session should not attempt to mint or store that token itself.
 - **Genuinely needs KriRuo, not just "hasn't been automated yet"**: the Play Console account
   itself ($25, identity verification), the first manual `.aab` upload to it (Google's own
   requirement, not a tooling gap), any billing-plan decision (see the Blaze-vs-Spark discussion
-  in git history), and any GitHub App/org permission change like the one above.
-- **Not yet automated, and genuinely could be** (beyond the Play Developer API upload already
-  called out above): Gradle dependency updates (no Dependabot/Renovate config exists --
-  version bumps like the Firebase BoM pin only happen if someone notices), a code-quality gate
-  in `ci.yml` (Android Lint/ktlint/detekt -- today only tests + a compile check run, so a
-  non-crashing issue passes through silently), and cleanup of `build-test-apk.yml`'s ad-hoc
-  `test-<ref>-<run#>` GitHub Releases (no expiry, accumulate indefinitely).
+  in git history), any GitHub App/org permission change like the one above, generating and
+  adding the `FIREBASE_TOKEN` secret (a session could technically run `firebase login:ci`
+  itself, but that would mint a long-lived credential tied to KriRuo's Firebase account without
+  him watching it happen -- better for him to run it), and generating/adding the
+  `PLAY_SERVICE_ACCOUNT_JSON` secret once an app exists in Play Console (Play Console → Setup →
+  API access; a service-account key with publish rights on a specific app, same reasoning as
+  the Firebase token).
+- **Done this session, previously "not yet automated"**: Dependabot (`.github/dependabot.yml`,
+  weekly, `gradle` + `github-actions` ecosystems), a lint gate in `ci.yml` (`lintDebug`, see
+  "CI/CD" above), a scheduled cleanup of `build-test-apk.yml`'s ad-hoc `test-<ref>-<run#>`
+  GitHub Releases (`cleanup-test-releases.yml`), a `firebase-deploy.yml` for Firestore
+  rules/Auth config (dormant until `FIREBASE_TOKEN` exists), and the Play Store upload step
+  itself in `release-build.yml` (dormant until `PLAY_SERVICE_ACCOUNT_JSON` exists). What's left
+  genuinely not automated: an Android instrumented-test (`androidTest`)/Compose UI test suite
+  (still zero — `GameViewModelTest` covers ViewModel wiring via Robolectric, but no test drives
+  actual Compose UI), and ktlint/detekt style enforcement (Android Lint's `lintDebug` catches
+  correctness/a11y/perf issues, not Kotlin style).
 
 ## Architecture
 
