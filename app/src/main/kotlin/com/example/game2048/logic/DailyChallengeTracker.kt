@@ -23,9 +23,12 @@ data class DailyChallengeState(
  */
 object DailyChallengeTracker {
     /** Moves allowed before an attempt ends regardless of whether the board is still playable --
-     *  keeps every attempt on a given day's seed directly comparable by score alone, and keeps
-     *  the daily ritual short rather than an open-ended session. */
-    const val MOVE_CAP = 30
+     *  keeps every attempt on a given day's seed directly comparable by score alone. Raised from
+     *  the original 30 to 100: on a 4x4 board, 30 moves ends before the board gets interesting
+     *  (rarely past a few hundred points), while 100 is enough to reach the 512-1024 range and
+     *  feel like a real puzzle rather than a warm-up, at the cost of no longer being a
+     *  strictly *quick* daily ritual (roughly 3-5 minutes instead of under one). */
+    const val MOVE_CAP = 100
 
     /** Flat bonus XP for completing today's challenge -- win, loss, or simply running out the
      *  move cap, there's no difference, one attempt is one attempt. Flat rather than scaling

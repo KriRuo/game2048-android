@@ -71,7 +71,7 @@ Screen's ❓ icon.
   to a 10-day cap) shown right on the Start Screen so showing up daily visibly speeds up leveling.
 - Lifetime stats shown via the Start Screen's Stats icon: games played, highest tile ever
   reached, and total merges.
-- **Daily Challenge** — a card on the Start Screen opens one fixed-seed, 30-move-capped board
+- **Daily Challenge** — a card on the Start Screen opens one fixed-seed, 100-move-capped board
   shared by every player on a given calendar day, one attempt per day, no Undo/Jokers regardless
   of your own mode. Completing it (win, loss, or running out the move cap) earns a flat +50 XP
   bonus. Entirely separate from the daily streak above — its own local score/best history, no

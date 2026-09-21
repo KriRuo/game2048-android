@@ -81,6 +81,12 @@ object AppAnalytics {
 
     fun logJokerUsed(jokerId: String) = logEvent("joker_used", mapOf("joker_id" to jokerId))
 
+    /** Fired on every finished attempt (win, loss, or ran out of moves -- all "completed" the
+     *  same way). Exists specifically to answer "does anyone actually play the Daily Challenge?"
+     *  before investing further in it (more challenge types, a leaderboard, etc.) -- see
+     *  CLAUDE.md's Daily Challenge section. */
+    fun logDailyChallengeCompleted(score: Int) = logEvent("daily_challenge_completed", mapOf("score" to score))
+
     /** Ties subsequent Crashlytics reports and Analytics events to the signed-in account, or
      *  clears that link on sign-out -- otherwise both are anonymous per device/install, with no
      *  way to correlate a specific tester's bug report to a crash, or to answer cross-device

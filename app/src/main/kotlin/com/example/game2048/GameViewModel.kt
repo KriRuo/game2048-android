@@ -736,6 +736,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         dailyChallengeState = DailyChallengeTracker.recordCompletion(dailyChallengeState, today, score)
         saveDailyChallengeState(dailyChallengeState)
         dailyChallengeEngine = null
+        AppAnalytics.logDailyChallengeCompleted(score)
 
         cumulativeScore += DailyChallengeTracker.COMPLETION_BONUS_XP
         prefs.edit().putLong(KEY_CUMULATIVE_SCORE, cumulativeScore).commit()

@@ -18,6 +18,13 @@ same change that triggers the next `release-build.yml` run, moving `Unreleased` 
 
 ## Unreleased
 
+- Raise the Daily Challenge's `MOVE_CAP` from 30 to 100 -- 30 moves ended before the board got
+  interesting (rarely past a few hundred points); 100 is enough to reach the 512-1024 range
+  while staying a bounded, directly-comparable attempt. Also add a `daily_challenge_completed`
+  analytics event (score) -- there was no telemetry on whether the Daily Challenge gets played
+  at all, which blocked a decision on further investment (more challenge types, a leaderboard --
+  see CLAUDE.md's "Daily Challenge expansion" entry for what was discussed and paused pending
+  this data).
 - DevOps automation pass (no app code changes): add `.github/dependabot.yml` (weekly `gradle` +
   `github-actions` updates), a `lint` job to `ci.yml` (`./gradlew lintDebug` — starts green,
   40 pre-existing warnings/2 info, 0 errors), `cleanup-test-releases.yml` (scheduled weekly,

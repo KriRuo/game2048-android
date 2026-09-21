@@ -46,7 +46,7 @@ merged and verified. Since PR #2 merged, the following has landed directly on `m
   new `sign_up`/`sign_in`/`game_over`/`joker_used` events joined the original
   `game_started`/`level_up`/`streak_milestone`/`*_unlocked` ones.
 - **Daily Challenge**: a new mode (`logic/DailyChallengeTracker.kt`, `DailyChallengeScreen.kt`)
-  -- one fixed-seed, 30-move-capped board shared by every player on a given calendar day, one
+  -- one fixed-seed, 100-move-capped board shared by every player on a given calendar day, one
   attempt, no Undo/Jokers, +50 XP for completing it. Reachable from a new card on `StartScreen`.
   Local-only for now (not synced to Firestore).
 - `CHANGELOG.md` now exists, keyed by `versionCode` (see its own header for why) -- add an entry
@@ -76,6 +76,23 @@ can't do here" under CI/CD) -- what's left is genuinely human-only, roughly in p
    Applications → the app's Actions permission), if you want a session to be able to trigger
    `release-build.yml`/`build-test-apk.yml` itself instead of you clicking "Run workflow"
    manually in the Actions tab. Purely a convenience item, not a blocker for anything above.
+
+### Proposed feature (paused, pending engagement data): Daily Challenge expansion
+
+Discussed but deliberately not built yet: 6 additional challenge archetypes beyond the current
+flat score-attack (Tile Target, Speed Run, Merge Count, Ascending Row, Cluster Match, rotating
+per-day via a shuffled 6-day cycle seeded off `epochDay`) plus a per-day Firestore leaderboard
+for signed-in players (`dailyLeaderboards/{epochDay}/entries/{uid}`, gated on
+`request.auth != null` for both read and write, entries validated but not server-verified --
+scores are honor-system/spoofable without a paid Cloud Function, which is out of scope given the
+Spark-plan-only constraint elsewhere in this doc). Paused because there was no data on whether
+the *existing* Daily Challenge gets used at all before committing that much engineering to it --
+`AppAnalytics.logDailyChallengeCompleted(score)` (the `daily_challenge_completed` event) was
+added for exactly this reason. Revisit the 6-types-plus-leaderboard bundle once that event shows
+real engagement; a leaderboard specifically needs a critical mass of players to not feel worse
+than having none (a "you're #2 of 3" empty-feeling leaderboard is worse UX than no leaderboard).
+What *did* ship now: `DailyChallengeTracker.MOVE_CAP` raised from 30 to 100 (30 ended before the
+board got interesting) and the `daily_challenge_completed` analytics event itself.
 
 ### Proposed feature (not started): Push notifications
 
@@ -374,7 +391,10 @@ Robolectric to resolve the merged manifest/resources.
 **Analytics event catalog** (`AppAnalytics.kt`, all no-ops without `google-services.json`):
 `game_started`, `level_up`, `streak_milestone`, `theme_unlocked`/`pattern_unlocked`/
 `board_size_unlocked`, `sign_up`, `sign_in`, `game_over` (score + level), `joker_used` (which
-Joker). `AppAnalytics.setUserId()` ties all of these, plus Crashlytics crash reports, to the
+Joker), `daily_challenge_completed` (score) -- this last one exists specifically to answer "does
+anyone actually play the Daily Challenge?" before investing further in it (more challenge types,
+a leaderboard); see the Daily Challenge paragraph below. `AppAnalytics.setUserId()` ties all of
+these, plus Crashlytics crash reports, to the
 signed-in Firebase Auth uid (never PII) once `GameViewModel`'s sign-in collector sees one, so a
 specific tester's bug report can be correlated to a crash or an event stream instead of staying
 anonymous per device.
