@@ -22,33 +22,37 @@ working tree clean. One thing is still outstanding:
   its changes still make sense next to what's landed since, before it's ready for a merge
   decision.
 
-Everything else -- the Firebase backend (PR #2), the crash-on-launch found during phone testing
-(root-caused to a missing `isCoreLibraryDesugaringEnabled`, see `app/build.gradle.kts`, and
-confirmed fixed on-device), and a real sign-up/sign-in + cross-device sync round-trip -- is
-merged and verified. Since PR #2 merged, the following has landed directly on `master`
-(`CHANGELOG.md` has the full dated list -- this is just what changes how you'd work here):
+Everything else -- the Firebase backend (PR #2) and the crash-on-launch found during phone
+testing (root-caused to a missing `isCoreLibraryDesugaringEnabled`, see `app/build.gradle.kts`,
+and confirmed fixed on-device) -- is merged and verified. Since PR #2 merged, the following has
+landed directly on `master` (`CHANGELOG.md` has the full dated list -- this is just what changes
+how you'd work here):
 
-- **Auth polish**: password reset (`AuthRepository.sendPasswordResetEmail`), sign-in/up/reset
-  error messages mapped from `FirebaseAuthException` codes instead of Firebase's raw exception
-  text, and a fix for a real data-integrity bug where signing out never cleared local stats, so
-  a second brand-new account on the same device could silently inherit the first account's
-  progress (see `KEY_LAST_SYNCED_UID` in `GameViewModel.kt`).
+- **Accounts and cloud sync are gone again** (Play Store prep): Firebase Auth and Cloud Firestore
+  were pulled back out of the app entirely -- `AuthRepository.kt`, `CloudSyncRepository.kt` (and
+  the `CloudProgress` model it carried) and `AccountDialog.kt` deleted, the whole auth/sync
+  surface on `GameViewModel` and `AppAnalytics` with them, and `firebase-auth`/
+  `firebase-firestore`/`kotlinx-coroutines-play-services` dropped from `app/build.gradle.kts`.
+  The reason is the Data Safety declaration and privacy policy Google requires for a store
+  listing: an email/password account drags email addresses and a persistent player identity into
+  both, and a single-player puzzle gets far too little back for that. Progress is device-local
+  again, so `SharedPreferences` is once more the only persistence. Treat this as deferred rather
+  than abandoned -- the Firebase-side config was deliberately left in place, dormant (see
+  "Firebase backend" below), so cloud save can return in a later release without re-deriving it.
+  Analytics and Crashlytics were not touched and are still fully wired up.
 - **`GameMode` is now two fields, not one** -- see "Architecture" below. Closed a real bug where
   picking a different mode on the Start Screen could retroactively grant Jokers on a board
   already in progress.
 - Each Joker now gives **1 use per game**, down from 2 (`MAX_TELEPORTS`/`MAX_SWAPS`/`MAX_BOMBS`/
   `MAX_DOUBLES`/`MAX_ROTATES` in `GameViewModel.kt`).
-- `CloudProgress` carries `appVersionName`/`appVersionCode` now, so a Firestore query against
-  `users/{uid}` can answer "which build is this account on" directly -- see `CHANGELOG.md`'s own
-  header for why that's not redundant with Analytics' automatic (but anonymous) version
-  dimension.
-- `AppAnalytics.setUserId()` ties Crashlytics reports and Analytics events to the signed-in uid;
-  new `sign_up`/`sign_in`/`game_over`/`joker_used` events joined the original
-  `game_started`/`level_up`/`streak_milestone`/`*_unlocked` ones.
+- New `game_over`/`joker_used` analytics events joined the original
+  `game_started`/`level_up`/`streak_milestone`/`*_unlocked` ones. Everything Analytics and
+  Crashlytics report is anonymous per install -- there is no longer a uid to attribute any of it
+  to, and deliberately so; see "Architecture" for the full event catalog.
 - **Daily Challenge**: a new mode (`logic/DailyChallengeTracker.kt`, `DailyChallengeScreen.kt`)
   -- one fixed-seed, 100-move-capped board shared by every player on a given calendar day, one
   attempt, no Undo/Jokers, +50 XP for completing it. Reachable from a new card on `StartScreen`.
-  Local-only for now (not synced to Firestore).
+  Local-only, like every other piece of progress the app stores.
 - `CHANGELOG.md` now exists, keyed by `versionCode` (see its own header for why) -- add an entry
   there for any user-facing or architecturally-notable change, the same turn you make it.
 
@@ -61,10 +65,11 @@ can't do here" under CI/CD) -- what's left is genuinely human-only, roughly in p
    `RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD` under Settings →
    Secrets and variables → Actions -- `release-build.yml` needs them and was confirmed working
    end-to-end earlier, but worth a quick check if it ever goes red.
-2. **Generate and add `FIREBASE_TOKEN`**: `firebase login:ci` (as
-   `kristoffer.ruohonen@gmail.com`), add the token as a repo secret. Turns on
-   `firebase-deploy.yml` -- auto-deploys `firestore.rules`/Auth config on a `master` push that
-   touches them, instead of needing a session to do it ad hoc.
+2. **Generate and add `FIREBASE_TOKEN`** -- no longer on the critical path, since the app itself
+   no longer talks to Auth or Firestore and nothing `firebase-deploy.yml` deploys is read by a
+   client today. `firebase login:ci` (as `kristoffer.ruohonen@gmail.com`) plus the token as a
+   repo secret would turn that workflow on, auto-deploying `firestore.rules`/Auth config on a
+   `master` push that touches them; worth doing if and when cloud save comes back, not before.
 3. **Create the Google Play Console account** ($25, identity verification) -- blocks everything
    below. See "Play Store rollout" for the full store-listing checklist (privacy policy,
    screenshots, content rating, data safety form) once the account exists.
@@ -81,12 +86,15 @@ can't do here" under CI/CD) -- what's left is genuinely human-only, roughly in p
 
 Discussed but deliberately not built yet: 6 additional challenge archetypes beyond the current
 flat score-attack (Tile Target, Speed Run, Merge Count, Ascending Row, Cluster Match, rotating
-per-day via a shuffled 6-day cycle seeded off `epochDay`) plus a per-day Firestore leaderboard
-for signed-in players (`dailyLeaderboards/{epochDay}/entries/{uid}`, gated on
-`request.auth != null` for both read and write, entries validated but not server-verified --
-scores are honor-system/spoofable without a paid Cloud Function, which is out of scope given the
-Spark-plan-only constraint elsewhere in this doc). Paused because there was no data on whether
-the *existing* Daily Challenge gets used at all before committing that much engineering to it --
+per-day via a shuffled 6-day cycle seeded off `epochDay`) plus a per-day Firestore leaderboard.
+The 6 archetypes are pure `logic/` work and could still ship on their own. The leaderboard half
+(`dailyLeaderboards/{epochDay}/entries/{uid}`, gated on `request.auth != null` for both read and
+write, entries validated but not server-verified -- scores honor-system/spoofable without a paid
+Cloud Function, out of scope given the Spark-plan-only constraint elsewhere in this doc) now
+presupposes that accounts and Firestore come back at all, since both were dropped for the Play
+Store release, so it is blocked on that decision first and on engagement data only after it.
+Paused originally because there was no data on whether the *existing* Daily Challenge gets used
+at all before committing that much engineering to it --
 `AppAnalytics.logDailyChallengeCompleted(score)` (the `daily_challenge_completed` event) was
 added for exactly this reason. Revisit the 6-types-plus-leaderboard bundle once that event shows
 real engagement; a leaderboard specifically needs a critical mass of players to not feel worse
@@ -101,13 +109,14 @@ so a future session (or KriRuo) has a starting point instead of re-deriving it. 
 triggers: "your streak resets at midnight" (purely local — no server needed, just a scheduled
 local notification via `WorkManager`/`AlarmManager` computed from `StreakTracker`'s existing
 local-calendar-day logic), "you haven't played in N days" (needs a source of truth for *last
-played*, which isn't tracked server-side today — `CloudProgress` would need a
-`lastPlayedAt` field, or this stays local-only per-device like the streak reminder), and "a new
+played*; with Auth and Firestore out of the app there is no server-side state at all any more, so
+this is necessarily local-only per-device like the streak reminder unless cloud save returns),
+and "a new
 Daily Challenge is up" (same local-only option, since the challenge's own seed is already
 locally derivable from the date — no server round-trip needed to know today's challenge exists).
 None of these strictly require Firebase Cloud Messaging or a server component; the local-only
-versions are the cheaper starting point and fit the "always fully playable signed-out" design
-principle better than a push-from-server approach would. If cross-device or truly
+versions are the cheaper starting point and fit the app's now entirely local, account-free design
+better than a push-from-server approach would. If cross-device or truly
 server-triggered notifications are wanted later, that needs a Cloud Function (or Firebase's own
 Cloud Messaging campaign scheduling) plus the Android `POST_NOTIFICATIONS` runtime permission
 (API 33+) and a `firebase-messaging` dependency, none of which exist in this repo yet.
@@ -142,14 +151,15 @@ Release signing reads an optional, gitignored `keystore.properties` at the repo 
 (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`) — never commit a keystore or its
 credentials.
 
-Firebase (Analytics, Crashlytics, Auth, Firestore) follows the same optional-file pattern as
-release signing: an optional, gitignored `app/google-services.json`. No file present means the
-`com.google.gms.google-services` Gradle plugin is simply never applied (see the `apply(plugin =
-...)` conditional in `app/build.gradle.kts` — it can't live in the `plugins {}` block itself,
-which is statically evaluated before the rest of the script and can't reference a `val` or even
-`java.io.File`), `BuildConfig.FIREBASE_ENABLED` is `false`, and every call into
-`AppAnalytics`/`AuthRepository`/`CloudSyncRepository` no-ops or fails soft — true for every
-fresh clone and for CI today, verified by building with the file removed. Fetch a real one via
+Firebase (Analytics and Crashlytics — all that is left of it, see "Firebase backend" below)
+follows the same optional-file pattern as release signing: an optional, gitignored
+`app/google-services.json`. No file present means the `com.google.gms.google-services` Gradle
+plugin is simply never applied (see the `apply(plugin = ...)` conditional in
+`app/build.gradle.kts` — it can't live in the `plugins {}` block itself, which is statically
+evaluated before the rest of the script and can't reference a `val` or even `java.io.File`),
+`BuildConfig.FIREBASE_ENABLED` is `false`, and every call into `AppAnalytics` no-ops or fails
+soft — true for every fresh clone and for CI today, verified by building with the file
+removed. Fetch a real one via
 `firebase apps:sdkconfig ANDROID <APP_ID> --project <PROJECT_ID>` (see "Firebase backend"
 below) rather than the Firebase Console UI.
 
@@ -165,51 +175,51 @@ app has already started.
 
 ## Firebase backend
 
-Project `game2048-47897`. Auth + Firestore are entirely optional cloud sync layered on top of
-local play: the game is always fully playable signed-out, and every function in the three files
-below fails soft (no-ops, returns null) rather than throwing when Firebase isn't configured or a
-call fails. Analytics/Crashlytics don't need any of Auth/Firestore's setup below to work, but
-`AppAnalytics.setUserId()` *does* tie both of them to the signed-in uid once there is one (see
-`GameViewModel`'s `AuthRepository.currentUserId` collector) -- see "Architecture" for the event
-catalog.
+Project `game2048-47897`. What the app actually uses today is **Analytics and Crashlytics, and
+nothing else** — both optional, both anonymous per install, both no-ops without
+`app/google-services.json` (see "Commands" above), and neither needs any per-player setup at all.
 
-- **Auth** (`AuthRepository.kt`): Email/Password only, enabled via `firebase.json`'s `auth`
-  block + `firebase deploy --only auth` (not via the Console). `AccountDialog.kt` (opened from
-  the ☁️/🔒 icon on `StartScreen`) is the only UI — sign up, sign in, sign out, inline error
-  text. `GameViewModel` exposes `signedInUserId`/`authBusy`/`authError` and reacts to sign-in
-  from anywhere (including Firebase silently restoring a previous session on app open, not just
-  an in-dialog action) via a `viewModelScope` collector on `AuthRepository.currentUserId` set up
-  in `init {}`.
-- **Firestore** (`CloudSyncRepository.kt`): the database is named **`game2048-db`**, NOT
-  `(default)` — this project has no default database, so every access must go through the
-  `FirebaseFirestore.getInstance("game2048-db")` overload, and `firebase.json`'s `firestore`
-  block needs an explicit `"database": "game2048-db"` for CLI commands (`deploy`,
-  `firestore:databases:*`) to target the right one. Enterprise edition, `eur3` (Europe
-  multi-region), delete-protection enabled. One collection: `users/{uid}`, one document per
-  signed-in player, written as a full (non-merge) `.set()` — see `CloudProgress` for the exact
-  field list (a subset of `GameViewModel`'s locally-persisted lifetime stats/preferences, plus
-  `appVersionName`/`appVersionCode` from `BuildConfig` so a query can answer "which build is
-  this account on" per-account, not just anonymously the way Analytics' own version dimension
-  does).
-- **Sync policy**: on sign-in, `GameViewModel.applyCloudProgressIfSignedIn()` pulls the cloud
-  document and compares `cumulativeScore` — whichever side (device or cloud) has more lifetime
-  progress wins wholesale (adopted entirely, not field-by-field merged), and the other side gets
-  pushed up to match. Every progress-changing local write (`persist()`, plus the three
-  `onSelect*` preference setters, which don't go through `persist()`) triggers a best-effort
-  `syncToCloudIfSignedIn()` push afterward. This is deliberately simple (whole-snapshot
-  last-write-wins-by-score, no per-field timestamps) rather than a general conflict-resolution
-  system — fine for a single-player game with no concurrent-device-editing scenario to speak of.
-- **Security rules** (`firestore.rules`, deployed via `firebase deploy --only firestore`):
-  `users/{uid}` is readable/writable only by `request.auth.uid == uid`; every write is
-  schema-validated (exact field set via `hasOnly`+`hasAll`, every field type-checked, the three
-  `*Id` fields constrained to their real enum values); updates additionally enforce that
-  `cumulativeScore`/`bestScore`/`highestTileEver`/`totalMerges` can't decrease versus the
-  currently-stored document, backing up the client-side "adopt the larger" sync policy above
-  server-side. No `list` (nothing ever queries the collection, only gets a known uid) and no
-  `delete` (a player's synced progress is never client-erasable).
-- **Local dev / CI setup**: `.firebaserc` + `firebase.json` are committed (project ID and this
-  config aren't secret); `app/google-services.json` is not (see above) — fetch your own via the
-  Firebase CLI, logged in as an account with access to project `game2048-47897`.
+**Both are off until the player says yes.** `AndroidManifest.xml` ships
+`firebase_analytics_collection_enabled` and `firebase_crashlytics_collection_enabled` as
+`false`, so collection can't start merely because Firebase initialized;
+`AppAnalytics.applyConsent()` is the only thing that ever turns it on, called from
+`AppAnalytics.init()` with the stored answer and again from
+`GameViewModel.onAnalyticsConsentChanged()`. The answer lives in `KEY_ANALYTICS_CONSENT` and is
+deliberately **tri-state** — `true`, `false`, or absent — because "hasn't been asked" has to
+keep re-prompting while "said no" must not. `AnalyticsConsentDialog` asks on first launch,
+gating `WelcomeDialog` behind it (nothing may be collected before the question is answered, and
+two stacked first-run modals is a mess), and the same decision is permanently re-settable via
+the switch in `StatsDialog` — which is the app's only `Switch`, put there rather than behind a
+fifth Start Screen icon because Your Stats is already the screen about the player's own data.
+This is what makes the Play Data Safety declaration's "users can choose" answer honest; see
+`docs/play-store-submission.md`.
+
+Accounts and cloud sync used to live here too — Firebase Auth (Email/Password) plus a
+`users/{uid}` Firestore document holding a snapshot of lifetime progress — and were removed
+wholesale ahead of the first Play Store release. The trade wasn't close: an email/password
+account pulls email addresses and a persistent player identity into Google's Data Safety
+declaration and into the privacy policy that has to back it, and a single-player puzzle whose
+entire state fits in `SharedPreferences` gets very little in return. Dropping Auth and Firestore
+shrinks both documents to "app-usage analytics and crash reports, anonymous". Progress is
+device-local again, exactly as "Architecture" describes it.
+
+This is deferred, not abandoned, and the Firebase-side half is deliberately still committed:
+`firestore.rules`, `firestore.indexes.json`, `firebase.json`, `.firebaserc` and
+`.github/workflows/firebase-deploy.yml` all remain in the repo, dormant — nothing the app reads
+goes through any of them today. They're kept so that bringing cloud save back is a matter of
+writing a client again rather than re-deriving a schema, a rules file and a deploy pipeline, so
+don't "tidy them up" by deleting them. Two details in there are load-bearing for any future
+client: the Firestore database is named **`game2048-db`**, not `(default)` (this project has no
+default database, so access must go through the `FirebaseFirestore.getInstance("game2048-db")`
+overload, and `firebase.json`'s `firestore` block needs its explicit `"database": "game2048-db"`
+for CLI commands to target the right one), and `firestore.rules` already enforces the sync model
+that went with it — `users/{uid}` readable/writable only by `request.auth.uid == uid`, every
+write schema-validated, and `cumulativeScore`/`bestScore`/`highestTileEver`/`totalMerges` unable
+to decrease versus the stored document, with no `list` and no `delete` rule at all.
+
+**Local dev / CI setup**: `.firebaserc` + `firebase.json` are committed (project ID and this
+config aren't secret); `app/google-services.json` is not (see above) — fetch your own via the
+Firebase CLI, logged in as an account with access to project `game2048-47897`.
 
 ## CI/CD
 
@@ -243,7 +253,10 @@ Six workflows under `.github/workflows/`:
 
 - **`firebase-deploy.yml`** — runs on push to `master` when `firestore.rules`,
   `firestore.indexes.json`, `firebase.json`, or `.firebaserc` change (plus manual dispatch),
-  and deploys Firestore rules + Auth config via `firebase-tools`. Needs a `FIREBASE_TOKEN`
+  and deploys Firestore rules + Auth config via `firebase-tools`. Effectively dormant since Auth
+  and Firestore were removed from the app — nothing it deploys is read by a client any more — but
+  kept wired up for the same reason those config files are (see "Firebase backend" above). Needs
+  a `FIREBASE_TOKEN`
   secret (generate with `firebase login:ci`, add under Settings → Secrets and variables →
   Actions) — until that secret exists the job no-ops with a `::warning::` annotation instead of
   failing, so this workflow is safe to have merged before the secret is added.
@@ -259,7 +272,16 @@ repo's early history) still work.
   Actions secrets (never committed): `RELEASE_KEYSTORE_BASE64` (the keystore file, base64),
   `RELEASE_KEYSTORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD`. The workflow writes
   `app/game2048-release.jks` and a root `keystore.properties` from those secrets, builds, then
-  deletes both before the job ends. Output is uploaded as a workflow artifact named
+  deletes both before the job ends. Secrets reach those steps through `env:` rather than being
+  interpolated into the `run:` script: the shell doesn't re-expand a variable's *value*, so a
+  password containing `$` or a backtick survives, where the old inlined heredoc mangled it.
+  It also writes `app/google-services.json` from `GOOGLE_SERVICES_JSON_BASE64` and passes
+  `-PrequireFirebase=true`. That pairing is load-bearing: before it, a CI bundle built without
+  that file compiled and ran fine but shipped `FIREBASE_ENABLED=false`, so it collected nothing
+  at all, silently — with the Play upload step already wired to publish it. `app/build.gradle.kts`
+  now turns that into a hard build failure, while a fresh clone doing a local `assembleRelease`
+  (no such flag) still works. Unit tests run before the bundle, since this path can publish.
+  Output is uploaded as a workflow artifact named
   `app-release-bundle`, and — new this session — also has a dormant Play Store upload step
   (`r0adkll/upload-google-play@v1`, targeting the `internal` track) gated on a
   `PLAY_SERVICE_ACCOUNT_JSON` secret via `env.HAS_PLAY_CREDENTIALS` (checked as an env var
@@ -284,15 +306,25 @@ left, roughly in order:
    variables → Actions, if not already done (the `release-build.yml` workflow will fail
    without them — check that first if it's red).
 3. Create the Google Play Console account ($25, identity verification).
-4. ~~Create a Firebase project~~ — done: project `game2048-47897`, Firestore (`game2048-db`,
-   Enterprise, `eur3`) and Email/Password Auth are both live — see "Firebase backend" above.
-   Every dev machine (and CI, if a future workflow needs it) still needs its own
-   `app/google-services.json` fetched via the Firebase CLI, since that file isn't committed.
-5. Store listing requirements: privacy policy URL, app icon/feature graphic/screenshots,
-   content rating questionnaire, data safety form — no longer "no data collected": Firebase
-   Analytics collects app-usage events, and signed-in players' game progress (scores, streaks,
-   preferences — no PII beyond the email/password they signed up with) syncs to Firestore.
-6. First `.aab` upload to Play Console must be manual (Google requires this before any API
+4. **Add `GOOGLE_SERVICES_JSON_BASE64` as a repo secret** (`base64 -w0 app/google-services.json`).
+   Without it `release-build.yml` now fails outright rather than doing what it used to: quietly
+   producing a bundle with `FIREBASE_ENABLED=false` that collected nothing. See "CI/CD" above.
+5. ~~Create a Firebase project~~ — done: project `game2048-47897`. Only Analytics and Crashlytics
+   are used by the app now; the Firestore database and Auth provider still exist server-side but
+   nothing calls them (see "Firebase backend" above). Every dev machine needs its own
+   `app/google-services.json` via the Firebase CLI, since that file isn't committed.
+6. Store listing requirements — all drafted in `docs/play-store-submission.md`, which carries the
+   exact Data Safety answers, the listing copy, and the asset sizes still needed. The privacy
+   policy is `docs/privacy-policy.html`, ready to serve via GitHub Pages (Settings → Pages →
+   branch `master`, folder `/docs`); **its contact-email placeholder must be filled in first.**
+   Data Safety is "yes, data is collected": Analytics app-interaction events, Crashlytics crash
+   logs and diagnostics, and a Firebase-generated device identifier — all marked optional, since
+   the first-run consent dialog lets players decline. No personal data, no accounts.
+7. **Closed testing is the long pole:** a personal Play Console account created after
+   2023-11-13 must run a closed test with **12+ testers opted in continuously for 14 days**, who
+   actually install and use the app, before it can apply for production access. Start recruiting
+   before the code is ready — nothing about the app shortens this.
+8. First `.aab` upload to Play Console must be manual (Google requires this before any API
    automation can target that app listing) — grab the artifact from a `release-build.yml` run.
 
 **Next technical step once an app exists in Play Console:**
@@ -390,14 +422,15 @@ Robolectric to resolve the merged manifest/resources.
 
 **Analytics event catalog** (`AppAnalytics.kt`, all no-ops without `google-services.json`):
 `game_started`, `level_up`, `streak_milestone`, `theme_unlocked`/`pattern_unlocked`/
-`board_size_unlocked`, `sign_up`, `sign_in`, `game_over` (score + level), `joker_used` (which
-Joker), `daily_challenge_completed` (score) -- this last one exists specifically to answer "does
-anyone actually play the Daily Challenge?" before investing further in it (more challenge types,
-a leaderboard); see the Daily Challenge paragraph below. `AppAnalytics.setUserId()` ties all of
-these, plus Crashlytics crash reports, to the
-signed-in Firebase Auth uid (never PII) once `GameViewModel`'s sign-in collector sees one, so a
-specific tester's bug report can be correlated to a crash or an event stream instead of staying
-anonymous per device.
+`board_size_unlocked`, `game_over` (score + level), `joker_used` (which Joker),
+`daily_challenge_completed` (score) -- this last one exists specifically to answer "does anyone
+actually play the Daily Challenge?" before investing further in it (more challenge types, a
+leaderboard); see the Daily Challenge paragraph below. Both these events and Crashlytics crash
+reports are **anonymous per install**: no user id is ever set on either, because there are no
+accounts to set one from since Auth was removed. That means a specific tester's crash can't be
+correlated back to them by identity -- a real loss, and the deliberate price of keeping the Play
+Store Data Safety declaration free of personal data. Isolate a tester's stream by build (the
+releases `build-test-apk.yml` publishes) or by asking them, not by reintroducing an identifier.
 
 **Progression systems are independent, pure, and separately unit tested** — same pattern as
 the engine, each with no Android or Compose dependency:
@@ -430,22 +463,22 @@ apart from the regular, persisted `game`/`engine` -- same local-calendar-day con
 capped at `DailyChallengeTracker.MOVE_CAP` moves, no Undo/Jokers, one attempt per day. Its board
 isn't persisted across a process restart (killing the app mid-attempt just restarts today's
 identical seed from scratch) -- same not-a-big-deal tradeoff `MAX_UNDOS` already makes.
-Deliberately not folded into the existing streak (see `CHANGELOG.md`'s entry for why) and not
-synced to Firestore yet.
+Deliberately not folded into the existing streak (see `CHANGELOG.md`'s entry for why); its
+score/best history, like every other piece of progress, never leaves the device.
 
 **Compose UI is split by concern**, not by screen-per-file convenience — each file below owns
 one piece of the visual/interaction surface: `MainActivity` (entry point) → `GameScreen`
 (Start vs. Game vs. Daily Challenge nav + in-game layout) → `StartScreen` (mode/theme/board-
-size/stats/account entry points) / `GameChrome` (header/sidebar + score chip) / `GameBoardUi`
+size/stats entry points) / `GameChrome` (header/sidebar + score chip) / `GameBoardUi`
 (grid, animated tiles, swipe gestures -- its `Board` composable is `internal`, reused as-is by
 `DailyChallengeScreen`) / `JokerUi` (aiming banner + action bar) / `GameOverlays` (combo popup,
 streak banner, win/game-over overlay) / `DailyChallengeScreen` (the daily challenge's own small
 screen -- see "Architecture" above), with `ThemePickerDialog`, `BoardSizePickerDialog`,
-`StatsDialog`, `WelcomeDialog` (first-run "How to Play" walkthrough), `DailyRewardDialog`
-(claimable streak bonus-XP), and `AccountDialog` (sign up/in/out, password reset -- opened from
-the ☁️/🔒 icon) as the picker/info dialogs opened from `StartScreen`, plus `ConfirmNewGameDialog`
-opened from the in-game New Game button. `ui/theme/` holds the Material3 theme wiring (colors
-per palette, typography).
+`StatsDialog`, `WelcomeDialog` (first-run "How to Play" walkthrough), and `DailyRewardDialog`
+(claimable streak bonus-XP) as the picker/info dialogs opened from `StartScreen` -- its
+`UtilityRow` is four icons wide again (Theme 🎨, board size, Stats 📊, How to Play ❓) now that the
+☁️/🔒 account icon is gone -- plus `ConfirmNewGameDialog` opened from the in-game New Game
+button. `ui/theme/` holds the Material3 theme wiring (colors per palette, typography).
 
 **Streaks and Levels are directly connected**: `StreakTracker.dailyBonusXp(streakDay)` (pure,
 capped at 10 days' worth) is added straight to cumulative score via

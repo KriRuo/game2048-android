@@ -77,14 +77,6 @@ Screen's ❓ icon.
   bonus. Entirely separate from the daily streak above — its own local score/best history, no
   leaderboard.
 
-### Optional cloud sync (sign in)
-Tap the 🔒/☁️ icon on the Start Screen to create an account (email/password) and sync lifetime
-progress (score, streaks, unlocks, preferences) across devices — entirely optional, the game is
-always fully playable signed out. Includes password reset. Whichever device (or the cloud) has
-more lifetime progress wins on sign-in; the other side is brought up to match. Backed by
-Firebase Auth + Cloud Firestore; see `CLAUDE.md`'s "Firebase backend" section for the schema and
-security rules if you're standing up your own Firebase project for this repo.
-
 ### Layout & polish
 - Responsive portrait layout that fits on real device screens without scrolling, plus a
   dedicated landscape layout (sidebar + board side by side) rather than a stretched portrait one.
@@ -98,6 +90,14 @@ security rules if you're standing up your own Firebase project for this repo.
   animate individual tiles rather than snapping a raw value grid into place. Progression logic
   (`LevelTracker`, `StreakTracker`, `ThemeUnlocks`, `BoardSizeOption`) is similarly pure and
   independently unit tested.
+- Everything you unlock, earn, or leave half-finished stays on the device: best score, lifetime
+  stats, streak, level, palette/board-size preferences and the in-progress board are all kept in
+  `SharedPreferences`, with no account, no sign-in, and nothing uploaded anywhere. Cloud save was
+  built once and then deliberately taken back out ahead of the first Play Store release — an
+  email/password account would have meant declaring email addresses and a persistent player
+  identity in the store's data-safety disclosures, which is a lot to ask of a single-player
+  puzzle. It may come back in a later release. Firebase Analytics and Crashlytics are still
+  there, optional (they no-op without a `google-services.json`), and anonymous per install.
 - 91 JUnit tests: 83 pure `logic/` tests (engine, including Jokers and board-size variants,
   level curve, streak transitions, daily-challenge seeding/completion, theme/board-size unlock
   rules, save-state (de)serialization) plus a `GameViewModelTest` running the ViewModel itself
@@ -116,34 +116,31 @@ app/
     MainActivity.kt                - Activity entry point
     Game2048Application.kt          - Application class; installs a crash-capture fallback dialog
     GameScreen.kt                    - App nav (Start vs. Game vs. Daily Challenge) + in-game layout
-    StartScreen.kt                    - Landing screen: mode picker, customize/account icons, orbit flourish
+    StartScreen.kt                    - Landing screen: mode picker, customize icons, orbit flourish
     GameChrome.kt                      - In-game Header (portrait) / Sidebar (landscape) + ScoreChip
-    GameBoardUi.kt                       - The board itself: tile grid, animated tiles, swipe gestures
-    JokerUi.kt                            - Joker aiming banner + bottom action bar
-    GameOverlays.kt                        - Combo popup, streak milestone banner, win/game-over overlay
-    DailyChallengeScreen.kt                 - Daily Challenge's own small screen (start/play/result)
-    ThemePickerDialog.kt                      - Palette picker (opened from StartScreen's Theme icon)
-    BoardSizePickerDialog.kt                   - Board size picker (opened from StartScreen's size icon)
-    StatsDialog.kt                               - Lifetime stats (opened from StartScreen's Stats icon)
-    WelcomeDialog.kt                               - First-run "How to Play" walkthrough (opened from StartScreen's ? icon)
-    DailyRewardDialog.kt                            - Claimable "Day N streak!" bonus-XP reward (opened from StartScreen)
-    AccountDialog.kt                                 - Sign up/in/out + password reset (opened from StartScreen's ☁️/🔒 icon)
-    ConfirmNewGameDialog.kt                           - "Start New Game?" confirmation (opened from the in-game New Game button)
-    AppAnalytics.kt                                    - Firebase Analytics/Crashlytics wrapper (no-ops without config)
-    AuthRepository.kt                                   - Firebase Auth (Email/Password) wrapper (no-ops without config)
-    CloudSyncRepository.kt                               - Firestore cloud-sync wrapper (no-ops without config)
-    GameViewModel.kt                                      - Holds GameUiState, forwards swipes/Jokers to the engine, persists all state
-    logic/GameLogic.kt                                     - Pure game engine (tiles with stable ids, moves, merging, Jokers, win/lose)
-    logic/BoardSizeOption.kt                                - Board size tiers (Classic/Big/Mega/Giant) and their unlock levels
-    logic/LevelTracker.kt                                    - Cumulative-score → player Level curve
-    logic/StreakTracker.kt                                    - Daily streak state machine + milestone detection
-    logic/DailyChallengeTracker.kt                             - Daily Challenge completion state + per-day seed derivation
-    logic/ThemeUnlocks.kt                                       - Tile color palette definitions and unlock levels
-    logic/GameStateSerializer.kt                                 - Encodes/decodes GameState for SharedPreferences persistence
-    ui/theme/                                                     - Compose Material3 theme: per-palette colors & typography
-  src/test/kotlin/.../logic/                                      - 83 JUnit tests across 7 files (engine, level, streak, daily
-                                                                     challenge, unlocks, serialization)
-  src/test/kotlin/.../GameViewModelTest.kt                        - 8 more, running GameViewModel itself via Robolectric
+    GameBoardUi.kt                      - The board itself: tile grid, animated tiles, swipe gestures
+    JokerUi.kt                           - Joker aiming banner + bottom action bar
+    GameOverlays.kt                       - Combo popup, streak milestone banner, win/game-over overlay
+    DailyChallengeScreen.kt                - Daily Challenge's own small screen (start/play/result)
+    ThemePickerDialog.kt                    - Palette picker (opened from StartScreen's Theme icon)
+    BoardSizePickerDialog.kt                 - Board size picker (opened from StartScreen's size icon)
+    StatsDialog.kt                            - Lifetime stats (opened from StartScreen's Stats icon)
+    WelcomeDialog.kt                           - First-run "How to Play" walkthrough (opened from StartScreen's ? icon)
+    DailyRewardDialog.kt                        - Claimable "Day N streak!" bonus-XP reward (opened from StartScreen)
+    ConfirmNewGameDialog.kt                      - "Start New Game?" confirmation (opened from the in-game New Game button)
+    AppAnalytics.kt                               - Firebase Analytics/Crashlytics wrapper (no-ops without config)
+    GameViewModel.kt                               - Holds GameUiState, forwards swipes/Jokers to the engine, persists all state
+    logic/GameLogic.kt                              - Pure game engine (tiles with stable ids, moves, merging, Jokers, win/lose)
+    logic/BoardSizeOption.kt                         - Board size tiers (Classic/Big/Mega/Giant) and their unlock levels
+    logic/LevelTracker.kt                             - Cumulative-score → player Level curve
+    logic/StreakTracker.kt                             - Daily streak state machine + milestone detection
+    logic/DailyChallengeTracker.kt                      - Daily Challenge completion state + per-day seed derivation
+    logic/ThemeUnlocks.kt                                - Tile color palette definitions and unlock levels
+    logic/GameStateSerializer.kt                          - Encodes/decodes GameState for SharedPreferences persistence
+    ui/theme/                                              - Compose Material3 theme: per-palette colors & typography
+  src/test/kotlin/.../logic/                                - 83 JUnit tests across 7 files (engine, level, streak, daily
+                                                              challenge, unlocks, serialization)
+  src/test/kotlin/.../GameViewModelTest.kt                   - 8 more, running GameViewModel itself via Robolectric
 ```
 
 ## Opening the project
