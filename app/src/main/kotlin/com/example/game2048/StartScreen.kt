@@ -70,18 +70,13 @@ internal fun StartScreen(
     onWelcomeDismissed: () -> Unit,
     onDebugResetWelcome: () -> Unit,
     onClaimDailyReward: () -> Unit,
-    onSignUp: (email: String, password: String) -> Unit,
-    onSignIn: (email: String, password: String) -> Unit,
-    onSignOut: () -> Unit,
-    onResetPassword: (email: String) -> Unit,
-    onDismissAuthError: () -> Unit,
+    onAnalyticsConsentChanged: (Boolean) -> Unit,
     onOpenDailyChallenge: () -> Unit
 ) {
     val accent = LocalPaletteColors.current.accent
     var showThemePicker by remember { mutableStateOf(false) }
     var showBoardSizePicker by remember { mutableStateOf(false) }
     var showStats by remember { mutableStateOf(false) }
-    var showAccount by remember { mutableStateOf(false) }
     var showModePicker by remember { mutableStateOf(false) }
     // Evaluated once, the first time this composable enters composition (i.e. once per real
     // app launch, or whenever the player navigates back here from a game -- see
@@ -179,12 +174,10 @@ internal fun StartScreen(
             Spacer(modifier = Modifier.height(18.dp))
             UtilityRow(
                 selectedBoardSize = uiState.selectedBoardSize,
-                signedIn = uiState.signedInUserId != null,
                 onTheme = { showThemePicker = true },
                 onBoardSize = { showBoardSizePicker = true },
                 onStats = { showStats = true },
-                onHelp = { showWelcome = true },
-                onAccount = { showAccount = true }
+                onHelp = { showWelcome = true }
             )
             if (uiState.currentStreak >= 1) {
                 Text(
@@ -221,29 +214,21 @@ internal fun StartScreen(
             onDismiss = { showBoardSizePicker = false }
         )
     }
-    if (showAccount) {
-        AccountDialog(
-            signedInUserId = uiState.signedInUserId,
-            authBusy = uiState.authBusy,
-            authError = uiState.authError,
-            passwordResetSent = uiState.passwordResetSent,
-            onSignUp = onSignUp,
-            onSignIn = onSignIn,
-            onSignOut = onSignOut,
-            onResetPassword = onResetPassword,
-            onDismissError = onDismissAuthError,
-            onDismiss = { showAccount = false }
-        )
-    }
     if (showStats) {
         StatsDialog(
             gamesPlayed = uiState.gamesPlayed,
             highestTileEver = uiState.highestTileEver,
             totalMerges = uiState.totalMerges,
+            analyticsConsentGranted = uiState.analyticsConsentGranted,
+            onAnalyticsConsentChanged = onAnalyticsConsentChanged,
             onDismiss = { showStats = false }
         )
     }
-    if (showWelcome) {
+    // Gates everything else on first launch: nothing is collected until this is answered, so it
+    // has to come before the walkthrough rather than stacking on top of it.
+    if (uiState.analyticsConsentGranted == null) {
+        AnalyticsConsentDialog(onAnswer = onAnalyticsConsentChanged)
+    } else if (showWelcome) {
         WelcomeDialog(
             onDismiss = {
                 showWelcome = false
@@ -373,12 +358,10 @@ private fun GameModePickerDialog(
 @Composable
 private fun UtilityRow(
     selectedBoardSize: BoardSizeOption,
-    signedIn: Boolean,
     onTheme: () -> Unit,
     onBoardSize: () -> Unit,
     onStats: () -> Unit,
-    onHelp: () -> Unit,
-    onAccount: () -> Unit
+    onHelp: () -> Unit
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -392,11 +375,6 @@ private fun UtilityRow(
         )
         UtilityIcon(label = "📊", description = "Stats", onClick = onStats)
         UtilityIcon(label = "❓", description = "How to Play", onClick = onHelp)
-        UtilityIcon(
-            label = if (signedIn) "☁️" else "🔒",
-            description = if (signedIn) "Cloud sync on" else "Sign in",
-            onClick = onAccount
-        )
     }
 }
 

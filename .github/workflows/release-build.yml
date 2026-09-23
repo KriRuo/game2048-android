@@ -31,24 +31,53 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      # Without this the bundle builds fine but ships with FIREBASE_ENABLED=false -- no
+      # Analytics, no Crashlytics, silently collecting nothing. google-services.json is
+      # gitignored, so CI has to supply it; base64 keeps the JSON out of YAML quoting trouble.
+      # Generate the secret with: base64 -w0 app/google-services.json
+      - name: Write google-services.json
+        env:
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+        run: |
+          if [ -z "$GOOGLE_SERVICES_JSON_BASE64" ]; then
+            echo "::error::GOOGLE_SERVICES_JSON_BASE64 is not set -- the bundle would ship with Firebase disabled."
+            exit 1
+          fi
+          printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" | base64 -d > app/google-services.json
+          python3 -c "import json; json.load(open('app/google-services.json'))"
+
+      # Secrets go through env: rather than being interpolated straight into the script. The
+      # shell does not re-expand a variable's *value*, so a password containing $ or a backtick
+      # survives intact -- inlined into the unquoted heredoc below, it would have been mangled.
       - name: Write release keystore
-        run: echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > app/game2048-release.jks
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+        run: printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 -d > app/game2048-release.jks
 
       - name: Write keystore.properties
+        env:
+          STORE_PASSWORD: ${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
           cat > keystore.properties <<EOF
           storeFile=game2048-release.jks
-          storePassword=${{ secrets.RELEASE_KEYSTORE_PASSWORD }}
-          keyAlias=${{ secrets.RELEASE_KEY_ALIAS }}
-          keyPassword=${{ secrets.RELEASE_KEY_PASSWORD }}
+          storePassword=$STORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
           EOF
 
-      - name: Build signed release bundle
-        run: ./gradlew bundleRelease --no-daemon -PversionCode=${{ github.run_number }}
+      # This path can publish straight to Play once PLAY_SERVICE_ACCOUNT_JSON exists, so the
+      # unit tests gate the bundle rather than only running on PRs.
+      - name: Run unit tests
+        run: ./gradlew test --no-daemon
 
-      - name: Clean up signing material
+      - name: Build signed release bundle
+        run: ./gradlew bundleRelease --no-daemon -PversionCode=${{ github.run_number }} -PrequireFirebase=true
+
+      - name: Clean up secrets
         if: always()
-        run: rm -f app/game2048-release.jks keystore.properties
+        run: rm -f app/game2048-release.jks keystore.properties app/google-services.json
 
       - name: Upload release bundle
         uses: actions/upload-artifact@v4
@@ -60,6 +89,9 @@ jobs:
       # exists in Play Console and a service-account key is added as that secret, this starts
       # publishing every signed bundle straight to the internal testing track with no other
       # change needed here.
+      # TODO before PLAY_SERVICE_ACCOUNT_JSON is added: pin this to a full commit SHA. It is a
+      # third-party action being handed Play publishing credentials, and a tag can be moved by
+      # whoever controls that repo.
       - name: Upload to Play Store (internal track)
         if: env.HAS_PLAY_CREDENTIALS == 'true'
         uses: r0adkll/upload-google-play@v1

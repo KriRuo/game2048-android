@@ -23,6 +23,17 @@
             android:authorities="${applicationId}.firebaseinitprovider"
             tools:node="remove" />
 
+        <!-- Collection starts OFF and is only ever switched on at runtime, once the player has
+             actually answered the consent dialog (see AppAnalytics.applyConsent). Without these
+             two, Firebase would start collecting the moment it initialises -- i.e. before the
+             question has been asked, which is exactly what the consent gate exists to prevent. -->
+        <meta-data
+            android:name="firebase_analytics_collection_enabled"
+            android:value="false" />
+        <meta-data
+            android:name="firebase_crashlytics_collection_enabled"
+            android:value="false" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

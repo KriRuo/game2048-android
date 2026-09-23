@@ -52,11 +52,7 @@ fun Game2048App(viewModel: GameViewModel = viewModel()) {
             onWelcomeDismissed = viewModel::onWelcomeDismissed,
             onDebugResetWelcome = viewModel::onDebugResetWelcome,
             onClaimDailyReward = viewModel::onClaimDailyReward,
-            onSignUp = viewModel::onSignUp,
-            onSignIn = viewModel::onSignIn,
-            onSignOut = viewModel::onSignOut,
-            onResetPassword = viewModel::onResetPassword,
-            onDismissAuthError = viewModel::onDismissAuthError,
+            onAnalyticsConsentChanged = viewModel::onAnalyticsConsentChanged,
             onOpenDailyChallenge = { screen = AppScreen.DAILY_CHALLENGE },
             onPlay = {
                 // A game-over board can't be "resumed" -- start fresh in whichever mode/size was

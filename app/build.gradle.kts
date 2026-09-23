@@ -25,6 +25,17 @@ if (googleServicesFile.exists()) {
     apply(plugin = "com.google.gms.google-services")
 }
 
+// A release built without google-services.json compiles and runs perfectly but reports nothing
+// -- no Analytics, no Crashlytics, no warning. That is fine for a fresh clone doing a local
+// assembleRelease, and unacceptable for anything headed to Play, so CI passes
+// -PrequireFirebase=true (see release-build.yml) to turn that silent gap into a build failure.
+if (project.findProperty("requireFirebase") == "true" && !googleServicesFile.exists()) {
+    throw GradleException(
+        "requireFirebase=true but app/google-services.json is missing -- this build would ship " +
+            "with FIREBASE_ENABLED=false and collect nothing."
+    )
+}
+
 // Release signing is intentionally NOT stored in this repo. Drop a keystore.properties
 // file (gitignored) next to this build file with: storeFile, storePassword, keyAlias,
 // keyPassword. Without it, the release build type is simply left unsigned (fine for
@@ -85,11 +96,11 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
-        // Firestore/Auth's gRPC transport touches java.time classes that only exist natively on
-        // API 26+; minSdk here is 24, so without desugaring, loading those classes on an
-        // API 24/25 device throws immediately (NoClassDefFoundError on java.time.*) the moment
-        // Firebase code runs -- a plausible cause of a crash that only shows up with Firebase
-        // present and that no try/catch of ours would have a chance to run before.
+        // Originally needed because Firestore/Auth's gRPC transport touches java.time classes
+        // that only exist natively on API 26+ (minSdk here is 24), which threw
+        // NoClassDefFoundError the moment Firebase code ran. Those two SDKs are gone now and
+        // Analytics/Crashlytics alone shouldn't need this -- kept until someone confirms a clean
+        // launch on a real API 24/25 device, since re-breaking that is silent until it isn't.
         isCoreLibraryDesugaringEnabled = true
     }
 
@@ -150,9 +161,6 @@ dependencies {
     implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
     implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.firebase:firebase-crashlytics")
-    implementation("com.google.firebase:firebase-auth")
-    implementation("com.google.firebase:firebase-firestore")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.8.1")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 
     testImplementation("junit:junit:4.13.2")

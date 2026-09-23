@@ -2,7 +2,6 @@ package com.example.game2048
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.viewModelScope
 import com.example.game2048.logic.BoardSizeOption
 import com.example.game2048.logic.BoardSizeUnlocks
 import com.example.game2048.logic.DailyChallengeState
@@ -23,7 +22,6 @@ import com.example.game2048.logic.TileMovement
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
 import java.util.TimeZone
 import kotlin.random.Random
 
@@ -39,17 +37,15 @@ private const val KEY_SELECTED_BOARD_SIZE = "selected_board_size"
 private const val KEY_SELECTED_GAME_MODE = "selected_game_mode"
 /** The ruleset the *currently saved board* was actually started under -- separate from
  *  [KEY_SELECTED_GAME_MODE] (the Start Screen preference for the *next* board). Written once
- *  per New Game, never touched by [GameViewModel.onSelectGameMode] or a cloud-progress sync. */
+ *  per New Game, never touched by [GameViewModel.onSelectGameMode]. */
 private const val KEY_ACTIVE_GAME_MODE = "active_game_mode"
 private const val KEY_GAMES_PLAYED = "games_played"
 private const val KEY_HIGHEST_TILE_EVER = "highest_tile_ever"
 private const val KEY_TOTAL_MERGES = "total_merges"
 private const val KEY_HAS_SEEN_WELCOME = "has_seen_welcome"
-/** The uid last signed into on this device -- lets [GameViewModel.applyCloudProgressIfSignedIn]
- *  tell "this device's own progress, being claimed by its first account" (a legitimate push)
- *  apart from "leftover progress from whoever was signed in here before" (which a brand-new
- *  second account must NOT silently inherit). */
-private const val KEY_LAST_SYNCED_UID = "last_synced_uid"
+/** The player's answer to the analytics consent dialog. Absent until they've actually answered
+ *  -- which is not the same as "no", since an unanswered prompt still has to be shown. */
+private const val KEY_ANALYTICS_CONSENT = "analytics_consent"
 private const val KEY_DAILY_CHALLENGE_LAST_COMPLETED_DAY = "daily_challenge_last_completed_day"
 private const val KEY_DAILY_CHALLENGE_LAST_SCORE = "daily_challenge_last_score"
 private const val KEY_DAILY_CHALLENGE_BEST_SCORE = "daily_challenge_best_score"
@@ -160,6 +156,11 @@ data class GameUiState(
      *  [buildInitialState]. [StartScreen] reads this once, on first composition, to decide
      *  whether to auto-open the walkthrough. */
     val hasSeenWelcome: Boolean = true,
+    /** Whether the player agreed to anonymous analytics/crash reporting, or null if they haven't
+     *  been asked yet -- the three states are genuinely distinct, since an unanswered prompt
+     *  still has to be shown while a declined one must not be. Nothing is collected until this
+     *  is explicitly true; see [AppAnalytics.applyConsent]. */
+    val analyticsConsentGranted: Boolean? = null,
     /** Bonus XP waiting to be claimed via [GameViewModel.onClaimDailyReward] for showing up
      *  today, or null if there's nothing pending -- see [DailyRewardDialog]. Set once, in
      *  [GameViewModel.buildInitialState], the moment [currentStreak] advances to a new day;
@@ -167,19 +168,6 @@ data class GameUiState(
      *  next closed) is final for that day -- same not-a-big-deal-either-way reasoning as
      *  [MAX_UNDOS] not surviving a process restart. */
     val pendingDailyReward: Int? = null,
-    /** Signed-in Firebase uid, or null when signed out -- see [AccountDialog]. Purely optional
-     *  cross-device cloud sync; the game is always fully playable while this is null. */
-    val signedInUserId: String? = null,
-    /** True while a sign-up/sign-in request is in flight, so [AccountDialog] can disable its
-     *  buttons and show a spinner instead of allowing a duplicate submit. */
-    val authBusy: Boolean = false,
-    /** Message from the last failed sign-up/sign-in/reset attempt, or null -- cleared by
-     *  [GameViewModel.onDismissAuthError] or the next attempt. */
-    val authError: String? = null,
-    /** True right after [GameViewModel.onResetPassword] succeeds, so [AccountDialog] can show
-     *  a "check your inbox" confirmation -- cleared by [GameViewModel.onDismissAuthError] or
-     *  the next sign-in/sign-up/reset attempt. */
-    val passwordResetSent: Boolean = false,
     /** Today's daily-challenge board while an attempt is active, null otherwise -- kept entirely
      *  separate from [game] (the regular, persisted, resumable board): the daily challenge is a
      *  short, unsaved, single-attempt session with its own seeded engine, not a variant of
@@ -219,10 +207,9 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
     private var dailyChallengeEngine: Game2048Engine? = null
 
     init {
-        // Both no-op entirely unless google-services.json was present at build time -- see
-        // AppAnalytics.kt/AuthRepository.kt.
-        AppAnalytics.init(application)
-        AuthRepository.init()
+        // No-ops entirely unless google-services.json was present at build time -- see
+        // AppAnalytics.kt. Collection stays off until the stored consent answer says otherwise.
+        AppAnalytics.init(application, storedAnalyticsConsent())
     }
 
     // Cached in memory so a move doesn't re-read them from disk every time. Declared before
@@ -239,19 +226,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(buildInitialState())
     val uiState: StateFlow<GameUiState> = _uiState.asStateFlow()
-
-    init {
-        // Reacts to sign-in/out from anywhere (e.g. AuthRepository restoring a previous
-        // session on app open, not just an in-app AccountDialog action). See
-        // applyCloudProgressIfSignedIn() for what a sign-in actually does.
-        viewModelScope.launch {
-            AuthRepository.currentUserId.collect { uid ->
-                _uiState.value = _uiState.value.copy(signedInUserId = uid)
-                AppAnalytics.setUserId(uid)
-                if (uid != null) applyCloudProgressIfSignedIn(uid)
-            }
-        }
-    }
 
     fun onSwipe(direction: Direction) {
         val current = _uiState.value
@@ -374,7 +348,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         if (!ThemeUnlocks.isUnlocked(palette, current.level)) return
         selectedPalette = palette
         prefs.edit().putString(KEY_SELECTED_PALETTE, palette.id).commit()
-        syncToCloudIfSignedIn()
         _uiState.value = current.copy(selectedPalette = palette)
     }
 
@@ -386,7 +359,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         if (!BoardSizeUnlocks.isUnlocked(option, current.level)) return
         selectedBoardSize = option
         prefs.edit().putString(KEY_SELECTED_BOARD_SIZE, option.id).commit()
-        syncToCloudIfSignedIn()
         _uiState.value = current.copy(selectedBoardSize = option)
     }
 
@@ -398,7 +370,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         if (mode == selectedGameMode) return
         selectedGameMode = mode
         prefs.edit().putString(KEY_SELECTED_GAME_MODE, mode.id).commit()
-        syncToCloudIfSignedIn()
         _uiState.value = _uiState.value.copy(selectedGameMode = mode)
     }
 
@@ -635,6 +606,21 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = _uiState.value.copy(hasSeenWelcome = true)
     }
 
+    /** The stored consent answer, or null if the player hasn't been asked yet. Read during
+     *  construction (before [_uiState] exists) as well as from [buildInitialState], so it reads
+     *  [prefs] directly rather than going through UI state. */
+    private fun storedAnalyticsConsent(): Boolean? =
+        if (prefs.contains(KEY_ANALYTICS_CONSENT)) prefs.getBoolean(KEY_ANALYTICS_CONSENT, false) else null
+
+    /** Records the player's analytics choice and applies it to both Firebase SDKs immediately --
+     *  from the first-run [AnalyticsConsentDialog] or the toggle in [StatsDialog], which are the
+     *  same decision made at different times. */
+    fun onAnalyticsConsentChanged(granted: Boolean) {
+        prefs.edit().putBoolean(KEY_ANALYTICS_CONSENT, granted).commit()
+        AppAnalytics.applyConsent(granted)
+        _uiState.value = _uiState.value.copy(analyticsConsentGranted = granted)
+    }
+
     /** Debug backdoor (tap the Start Screen's BEST chip 5x quickly): clears the "seen" flag
      *  for [WelcomeDialog], same tap gesture as [onDebugJumpToLevel30] but on a different
      *  chip/screen. Doesn't show the dialog itself -- force-stop and relaunch the app afterward
@@ -751,7 +737,6 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             dailyChallengeLastScore = dailyChallengeState.lastScore,
             dailyChallengeBestScore = dailyChallengeState.bestScore
         )
-        syncToCloudIfSignedIn()
     }
 
     private fun loadDailyChallengeState(): DailyChallengeState {
@@ -821,6 +806,7 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             highestTileEver = highestTileEver,
             totalMerges = totalMerges,
             hasSeenWelcome = prefs.getBoolean(KEY_HAS_SEEN_WELCOME, false),
+            analyticsConsentGranted = storedAnalyticsConsent(),
             pendingDailyReward = pendingReward,
             dailyChallengeCompletedToday = DailyChallengeTracker.isCompletedToday(dailyChallengeState, today),
             dailyChallengeLastScore = dailyChallengeState.lastScore,
@@ -888,236 +874,5 @@ class GameViewModel(application: Application) : AndroidViewModel(application) {
             .putLong(KEY_TOTAL_MERGES, totalMerges)
         if (includeBest) editor.putInt(KEY_BEST_SCORE, bestScore)
         editor.commit()
-        syncToCloudIfSignedIn()
-    }
-
-    /** Best-effort push of the current lifetime stats/preferences to Firestore -- no-ops when
-     *  signed out or Firebase isn't configured. See [CloudSyncRepository]. */
-    private fun syncToCloudIfSignedIn() {
-        val uid = AuthRepository.currentUserId.value ?: return
-        val streak = loadStreak()
-        val progress = CloudProgress(
-            cumulativeScore = cumulativeScore,
-            bestScore = bestScore,
-            highestTileEver = highestTileEver,
-            totalMerges = totalMerges,
-            gamesPlayed = gamesPlayed,
-            currentStreak = streak.current,
-            longestStreak = streak.longest,
-            streakLastPlayedEpochDay = streak.lastPlayedEpochDay,
-            selectedPaletteId = selectedPalette.id,
-            selectedBoardSizeId = selectedBoardSize.id,
-            selectedGameModeId = selectedGameMode.id,
-            updatedAtEpochMillis = System.currentTimeMillis(),
-            appVersionName = BuildConfig.VERSION_NAME,
-            appVersionCode = BuildConfig.VERSION_CODE
-        )
-        viewModelScope.launch { CloudSyncRepository.push(uid, progress) }
-    }
-
-    /** Called on every sign-in (including one [AuthRepository] silently restores on app open).
-     *  Cloud progress wins over local only when it represents *more* lifetime progress
-     *  ([CloudProgress.cumulativeScore] higher than this device's) -- otherwise this device's
-     *  local progress is the more advanced one, so it's pushed up to the cloud instead. Either
-     *  way this never loses progress on either side, only ever adopts the larger of the two.
-     *
-     *  Exception: a brand-new account (no cloud doc yet) signing in on a device that was last
-     *  signed into a *different* account never adopts-and-pushes local progress -- that local
-     *  progress belongs to whoever used this device before, not to this new account. See
-     *  [KEY_LAST_SYNCED_UID] and [resetLocalProgressForNewIdentity]. */
-    private fun applyCloudProgressIfSignedIn(uid: String) {
-        viewModelScope.launch {
-            val cloud = CloudSyncRepository.pull(uid)
-            val lastSyncedUid = prefs.getString(KEY_LAST_SYNCED_UID, null)
-            prefs.edit().putString(KEY_LAST_SYNCED_UID, uid).apply()
-
-            if (cloud == null && lastSyncedUid != null && lastSyncedUid != uid) {
-                resetLocalProgressForNewIdentity()
-                syncToCloudIfSignedIn()
-                return@launch
-            }
-
-            if (cloud == null || cloud.cumulativeScore <= cumulativeScore) {
-                syncToCloudIfSignedIn()
-                return@launch
-            }
-
-            applyProgressSnapshot(
-                cumulativeScore = cloud.cumulativeScore,
-                bestScore = maxOf(bestScore, cloud.bestScore),
-                highestTileEver = maxOf(highestTileEver, cloud.highestTileEver),
-                totalMerges = maxOf(totalMerges, cloud.totalMerges),
-                gamesPlayed = maxOf(gamesPlayed, cloud.gamesPlayed),
-                selectedPalette = TilePalette.fromId(cloud.selectedPaletteId),
-                selectedBoardSize = BoardSizeOption.fromId(cloud.selectedBoardSizeId),
-                selectedGameMode = GameMode.fromId(cloud.selectedGameModeId),
-                streak = StreakState(
-                    current = cloud.currentStreak,
-                    longest = cloud.longestStreak,
-                    lastPlayedEpochDay = cloud.streakLastPlayedEpochDay
-                )
-            )
-        }
-    }
-
-    /** A fresh identity on this device starts with a clean slate -- same defaults as a brand
-     *  new install -- rather than silently inheriting whatever the previously-signed-in account
-     *  left in local storage. See [applyCloudProgressIfSignedIn]. */
-    private fun resetLocalProgressForNewIdentity() {
-        applyProgressSnapshot(
-            cumulativeScore = 0L,
-            bestScore = 0,
-            highestTileEver = 0,
-            totalMerges = 0L,
-            gamesPlayed = 0,
-            selectedPalette = TilePalette.DEFAULT,
-            selectedBoardSize = BoardSizeOption.DEFAULT,
-            selectedGameMode = GameMode.DEFAULT,
-            streak = StreakState(current = 0, longest = 0, lastPlayedEpochDay = 0L)
-        )
-    }
-
-    /** Writes a full lifetime-progress snapshot to memory, [prefs], and [_uiState] in one place
-     *  -- shared by the cloud-adopt and new-identity-reset paths in [applyCloudProgressIfSignedIn]. */
-    private fun applyProgressSnapshot(
-        cumulativeScore: Long,
-        bestScore: Int,
-        highestTileEver: Int,
-        totalMerges: Long,
-        gamesPlayed: Int,
-        selectedPalette: TilePalette,
-        selectedBoardSize: BoardSizeOption,
-        selectedGameMode: GameMode,
-        streak: StreakState
-    ) {
-        this.cumulativeScore = cumulativeScore
-        this.bestScore = bestScore
-        this.highestTileEver = highestTileEver
-        this.totalMerges = totalMerges
-        this.gamesPlayed = gamesPlayed
-        this.selectedPalette = selectedPalette
-        this.selectedBoardSize = selectedBoardSize
-        this.selectedGameMode = selectedGameMode
-        saveStreak(streak)
-        prefs.edit()
-            .putLong(KEY_CUMULATIVE_SCORE, cumulativeScore)
-            .putInt(KEY_BEST_SCORE, bestScore)
-            .putInt(KEY_HIGHEST_TILE_EVER, highestTileEver)
-            .putLong(KEY_TOTAL_MERGES, totalMerges)
-            .putInt(KEY_GAMES_PLAYED, gamesPlayed)
-            .putString(KEY_SELECTED_PALETTE, selectedPalette.id)
-            .putString(KEY_SELECTED_BOARD_SIZE, selectedBoardSize.id)
-            .putString(KEY_SELECTED_GAME_MODE, selectedGameMode.id)
-            .commit()
-
-        val level = LevelTracker.levelForCumulativeScore(cumulativeScore)
-        val current = _uiState.value
-        _uiState.value = current.copy(
-            level = level,
-            levelProgress = LevelTracker.progressToNextLevel(cumulativeScore),
-            cumulativeScore = cumulativeScore,
-            highestTileEver = highestTileEver,
-            totalMerges = totalMerges,
-            gamesPlayed = gamesPlayed,
-            selectedPalette = selectedPalette,
-            selectedBoardSize = selectedBoardSize,
-            // Only the *preference* -- never gameMode itself, which is locked to whatever board
-            // is currently in progress. A sign-in adopting a different device's mode preference
-            // must not retroactively grant/hide Jokers on this device's in-progress board any
-            // more than picking a mode on the Start Screen does; see onSelectGameMode.
-            selectedGameMode = selectedGameMode,
-            currentStreak = streak.current,
-            longestStreak = streak.longest,
-            game = current.game.copy(best = bestScore)
-        )
-    }
-
-    /** No-ops if Firebase isn't configured for this build. On success, [onSwipe]/etc. will pick
-     *  up the new uid via the [AuthRepository.currentUserId] collector in init{} and merge/push
-     *  cloud progress automatically -- this function only handles the request/error UI state. */
-    fun onSignUp(email: String, password: String) {
-        val current = _uiState.value
-        if (current.authBusy) return
-        val trimmedEmail = email.trim()
-        if (trimmedEmail.isEmpty() || password.isEmpty()) {
-            _uiState.value = current.copy(authError = "Enter your email and password.", passwordResetSent = false)
-            return
-        }
-        // Matches Firebase's own minimum -- catching it here skips a network round trip for an
-        // outcome that's already certain, but AuthRepository.signUp still maps the same error
-        // if this check is ever out of sync with Firebase's actual requirement.
-        if (password.length < 6) {
-            _uiState.value = current.copy(authError = "Password must be at least 6 characters.", passwordResetSent = false)
-            return
-        }
-        _uiState.value = current.copy(authBusy = true, authError = null, passwordResetSent = false)
-        viewModelScope.launch {
-            when (val outcome = AuthRepository.signUp(trimmedEmail, password)) {
-                is AuthRepository.Outcome.Success -> {
-                    // Sets the uid synchronously from the outcome we already have, rather than
-                    // waiting on the currentUserId collector's async AuthStateListener callback,
-                    // which could otherwise still be pending when logSignUp() fires -- that race
-                    // would log this event anonymously (or under a previously signed-in uid).
-                    AppAnalytics.setUserId(outcome.uid)
-                    AppAnalytics.logSignUp()
-                    _uiState.value = _uiState.value.copy(authBusy = false, authError = null)
-                }
-                is AuthRepository.Outcome.Failure ->
-                    _uiState.value = _uiState.value.copy(authBusy = false, authError = outcome.message)
-            }
-        }
-    }
-
-    fun onSignIn(email: String, password: String) {
-        val current = _uiState.value
-        if (current.authBusy) return
-        val trimmedEmail = email.trim()
-        if (trimmedEmail.isEmpty() || password.isEmpty()) {
-            _uiState.value = current.copy(authError = "Enter your email and password.", passwordResetSent = false)
-            return
-        }
-        _uiState.value = current.copy(authBusy = true, authError = null, passwordResetSent = false)
-        viewModelScope.launch {
-            when (val outcome = AuthRepository.signIn(trimmedEmail, password)) {
-                is AuthRepository.Outcome.Success -> {
-                    // Same race as onSignUp above -- set the uid from the outcome before logging.
-                    AppAnalytics.setUserId(outcome.uid)
-                    AppAnalytics.logSignIn()
-                    _uiState.value = _uiState.value.copy(authBusy = false, authError = null)
-                }
-                is AuthRepository.Outcome.Failure ->
-                    _uiState.value = _uiState.value.copy(authBusy = false, authError = outcome.message)
-            }
-        }
-    }
-
-    /** Signs out locally only -- never touches any already-synced cloud or local progress. */
-    fun onSignOut() {
-        AuthRepository.signOut()
-    }
-
-    /** Sends a Firebase password-reset email. No-ops with a friendly error if [email] is blank
-     *  rather than letting Firebase's own validation error surface instead. */
-    fun onResetPassword(email: String) {
-        val current = _uiState.value
-        if (current.authBusy) return
-        val trimmedEmail = email.trim()
-        if (trimmedEmail.isEmpty()) {
-            _uiState.value = current.copy(authError = "Enter your email above first.", passwordResetSent = false)
-            return
-        }
-        _uiState.value = current.copy(authBusy = true, authError = null, passwordResetSent = false)
-        viewModelScope.launch {
-            when (val outcome = AuthRepository.sendPasswordResetEmail(trimmedEmail)) {
-                is AuthRepository.ResetOutcome.Sent ->
-                    _uiState.value = _uiState.value.copy(authBusy = false, passwordResetSent = true)
-                is AuthRepository.ResetOutcome.Failure ->
-                    _uiState.value = _uiState.value.copy(authBusy = false, authError = outcome.message)
-            }
-        }
-    }
-
-    fun onDismissAuthError() {
-        _uiState.value = _uiState.value.copy(authError = null, passwordResetSent = false)
     }
 }

@@ -27,8 +27,10 @@ object AppAnalytics {
     private var initialized = false
 
     /** Call once, e.g. from [com.example.game2048.GameViewModel]'s init block -- safe to call
-     *  more than once (a no-op after the first real call). */
-    fun init(context: Context) {
+     *  more than once (a no-op after the first real call). [consentGranted] is the player's
+     *  stored answer, or null if they haven't been asked yet; both SDKs stay dark until it's
+     *  an explicit true (see [applyConsent]). */
+    fun init(context: Context, consentGranted: Boolean?) {
         if (initialized) return
         initialized = true
         if (!BuildConfig.FIREBASE_ENABLED) return
@@ -40,11 +42,31 @@ object AppAnalytics {
             analytics = FirebaseAnalytics.getInstance(context)
             // Touching the instance installs Crashlytics' uncaught-exception handler.
             FirebaseCrashlytics.getInstance()
+            applyConsent(consentGranted)
             Log.i(TAG, "Firebase initialized for project ${app.options.projectId}")
         } catch (t: Throwable) {
             // Never let a bad/missing Firebase config take the app down with it.
             Log.w(TAG, "Firebase init failed, analytics disabled for this session", t)
             analytics = null
+        }
+    }
+
+    /** Switches both SDKs' collection on or off to match the player's choice. The manifest ships
+     *  them disabled, so this is the only thing that ever turns them on -- a null [granted]
+     *  (not asked yet) is treated exactly like a no. Persists across restarts inside Firebase
+     *  itself, but is set again on every [init] so our stored answer always wins. */
+    fun applyConsent(granted: Boolean?) {
+        if (!BuildConfig.FIREBASE_ENABLED) return
+        val enabled = granted == true
+        try {
+            analytics?.setAnalyticsCollectionEnabled(enabled)
+        } catch (_: Throwable) {
+            // Analytics not initialized -- nothing to switch.
+        }
+        try {
+            FirebaseCrashlytics.getInstance().isCrashlyticsCollectionEnabled = enabled
+        } catch (_: Throwable) {
+            // Crashlytics not initialized -- nothing to switch.
         }
     }
 
@@ -73,10 +95,6 @@ object AppAnalytics {
 
     fun logBoardSizeUnlocked(boardSizeId: String) = logEvent("board_size_unlocked", mapOf("board_size_id" to boardSizeId))
 
-    fun logSignUp() = logEvent("sign_up")
-
-    fun logSignIn() = logEvent("sign_in")
-
     fun logGameOver(score: Int, level: Int) = logEvent("game_over", mapOf("score" to score, "level" to level))
 
     fun logJokerUsed(jokerId: String) = logEvent("joker_used", mapOf("joker_id" to jokerId))
@@ -86,25 +104,6 @@ object AppAnalytics {
      *  before investing further in it (more challenge types, a leaderboard, etc.) -- see
      *  CLAUDE.md's Daily Challenge section. */
     fun logDailyChallengeCompleted(score: Int) = logEvent("daily_challenge_completed", mapOf("score" to score))
-
-    /** Ties subsequent Crashlytics reports and Analytics events to the signed-in account, or
-     *  clears that link on sign-out -- otherwise both are anonymous per device/install, with no
-     *  way to correlate a specific tester's bug report to a crash, or to answer cross-device
-     *  questions like "do people who sign in come back more?" [uid] is a Firebase Auth uid, not
-     *  PII (e.g. never the player's email) -- exactly what both SDKs' own docs call for here. */
-    fun setUserId(uid: String?) {
-        if (!BuildConfig.FIREBASE_ENABLED) return
-        try {
-            FirebaseCrashlytics.getInstance().setUserId(uid ?: "")
-        } catch (_: Throwable) {
-            // Crashlytics itself not initialized -- nothing to do.
-        }
-        try {
-            analytics?.setUserId(uid)
-        } catch (_: Throwable) {
-            // Analytics itself not initialized -- nothing to do.
-        }
-    }
 
     /** For a future caught-but-worth-knowing-about condition; not wired to anything yet. */
     fun recordNonFatal(t: Throwable) {
