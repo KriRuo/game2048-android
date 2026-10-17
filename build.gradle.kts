@@ -4,7 +4,7 @@ plugins {
     id("org.jetbrains.kotlin.android") version "2.0.21" apply false
     // Kotlin 2.0+ moved the Compose compiler out of AGP's `composeOptions` and into this
     // dedicated Gradle plugin (must match the Kotlin version above).
-    id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" apply false
+    id("org.jetbrains.kotlin.plugin.compose") version "2.4.20" apply false
     // Only actually applied in app/build.gradle.kts when app/google-services.json exists --
     // see the comment there.
     id("com.google.gms.google-services") version "4.4.2" apply false
