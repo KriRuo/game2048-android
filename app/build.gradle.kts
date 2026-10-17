@@ -147,7 +147,7 @@ dependencies {
     // this project's Kotlin plugin (pinned to 2.0.21 in the root build.gradle.kts, alongside
     // AGP/Compose-compiler versions that pair with it) can't read. 33.5.1 is the newest BoM
     // verified to compile cleanly against that pin.
-    implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
+    implementation(platform("com.google.firebase:firebase-bom:34.19.0"))
     implementation("com.google.firebase:firebase-analytics")
     implementation("com.google.firebase:firebase-crashlytics")
     implementation("com.google.firebase:firebase-auth")
