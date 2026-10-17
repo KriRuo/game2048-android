@@ -160,7 +160,7 @@ dependencies {
     // as a plain JVM unit test instead of needing a device/emulator -- see GameViewModelTest.
     // Pinned to a version with confirmed API 34 support; tests target that via @Config(sdk = [34])
     // rather than compileSdk's 35, sidestepping any framework-jar lag for a brand-new API level.
-    testImplementation("org.robolectric:robolectric:4.13")
+    testImplementation("org.robolectric:robolectric:4.17")
 
     androidTestImplementation(platform("androidx.compose:compose-bom:2024.09.03"))
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
